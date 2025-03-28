@@ -2,24 +2,44 @@ use std::io;
 use rand::random_range;
 
 fn main() {
-    let randnum = random_range(1..=100);
-    let mut input = String::new();
+    println!("Set min: ");
+    let min: i32 = get_number(); 
+    println!("Set max: ");
+    let max: i32 = get_number(); 
+    let randnum: i32 = random_range(min..=max);
+    let mut input: i32 ;
+
+    let mut uniquetries = 0;
+    let mut numberstried: Vec<i32> = Vec::new();
 
     loop {
         println!("Enter: ");
-        input.clear();
+        input = get_number();
 
-        io::stdin().read_line(&mut input).unwrap();
+        if !numberstried.contains(&input) {
+            uniquetries += 1;         // Increment unique tries count
+            numberstried.push(input);  // Optionally add the new input to the list
+        }
 
-        let guess: i32 = input.trim().parse().unwrap();
-
-        if guess < randnum {
+        if input < randnum {
             println!("higher");
-        } else if guess > randnum {
+        } else if input > randnum {
             println!("lower");
         } else {
-            println!("gj");
+            println!("game over");
+            println!("Unique tries: {uniquetries}");
             break;
+        }
+    }
+}
+
+fn get_number() -> i32{
+    loop {
+        let mut val: String = String::new();
+        io::stdin().read_line(&mut val).unwrap();
+        match val.trim().parse::<i32>() {
+            Ok(num) => return num,
+            Err(_) => println!("Please enter a number"), 
         }
     }
 }
