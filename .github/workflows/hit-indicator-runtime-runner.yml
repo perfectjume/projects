@@ -1,0 +1,236 @@
+name: Hit Indicator temporary literal runtime runner
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/hit-indicator-runtime-runner.yml'
+  workflow_dispatch:
+
+jobs:
+  literal-client:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout isolated test branch
+        uses: actions/checkout@v4
+        with:
+          ref: hit-indicator-runtime-test
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox xdotool imagemagick libgl1-mesa-dri mesa-utils
+
+      - name: Reconstruct exact Hit Indicator v3
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat \
+            runtime-test/chunks/part00 \
+            runtime-test/chunks/part01 \
+            runtime-test/chunks/part02 \
+            runtime-test/chunks/part03 \
+            runtime-test/chunks/part04 \
+            runtime-test/chunks/part05 \
+            runtime-test/chunks/t6_00 \
+            runtime-test/chunks/t6_01 \
+            runtime-test/chunks/t6_02 \
+            runtime-test/chunks/t6_03 \
+            runtime-test/chunks/t6_04 \
+            runtime-test/chunks/t7_00 \
+            runtime-test/chunks/t7_01 \
+            runtime-test/chunks/t7_02 \
+            runtime-test/chunks/t7_03 \
+            runtime-test/chunks/t7_04 \
+            runtime-test/chunks/t8_00 \
+            runtime-test/chunks/t8_01 \
+            runtime-test/chunks/t8_02 \
+            runtime-test/chunks/t8_03 \
+            runtime-test/chunks/t8_04 \
+            runtime-test/chunks/t9_00 > /tmp/hit-v3.b64
+          base64 -d /tmp/hit-v3.b64 > /tmp/hit_indicator-1.21.1-neoforge-v3.jar
+          echo "a38aafa9387b0378072dc81dbccc8e36d69c8303ba2a2294800b19f3d432889f  /tmp/hit_indicator-1.21.1-neoforge-v3.jar" | sha256sum -c -
+          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v3.jar
+
+      - name: Prepare exact NeoForge 21.1.249 MDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/NeoForgeMDKs/MDK-1.21.1-ModDevGradle.git mdk
+          cd mdk
+          sed -i 's/^neo_version=.*/neo_version=21.1.249/' gradle.properties
+          sed -i 's/^mod_id=.*/mod_id=hitindicatortest/' gradle.properties
+          sed -i 's/^mod_name=.*/mod_name=Hit Indicator Runtime Test/' gradle.properties
+          sed -i 's/^mod_version=.*/mod_version=1.0.0/' gradle.properties
+          sed -i 's/^mod_group_id=.*/mod_group_id=com.example.examplemod/' gradle.properties
+
+          rm -rf src/main/java/com/example/examplemod
+          mkdir -p src/main/java/com/example/examplemod libs run/mods
+          cp ../runtime-test/RuntimeTestMod.java src/main/java/com/example/examplemod/RuntimeTestMod.java
+          cp ../runtime-test/RuntimeTestClient.java src/main/java/com/example/examplemod/RuntimeTestClient.java
+          cp /tmp/hit_indicator-1.21.1-neoforge-v3.jar libs/
+          cp /tmp/hit_indicator-1.21.1-neoforge-v3.jar run/mods/
+
+          sed -i '/dependencies {/a\    compileOnly files("libs/hit_indicator-1.21.1-neoforge-v3.jar")' build.gradle
+          chmod +x gradlew
+          ./gradlew --no-daemon compileJava
+
+      - name: Generate real Minecraft world
+        shell: bash
+        run: |
+          set -uo pipefail
+          cd mdk
+          mkdir -p run
+          echo 'eula=true' > run/eula.txt
+          cat > run/server.properties <<'EOF'
+          level-name=world
+          online-mode=false
+          difficulty=normal
+          gamemode=survival
+          spawn-monsters=true
+          enable-command-block=false
+          view-distance=4
+          simulation-distance=4
+          EOF
+
+          setsid ./gradlew --no-daemon runServer > ../server-console.log 2>&1 &
+          SERVER_PID=$!
+          READY=0
+          for i in $(seq 1 180); do
+            if grep -qE 'Done \(.*\)!|For help, type' run/logs/latest.log 2>/dev/null; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          cp run/logs/latest.log ../server-latest.log 2>/dev/null || true
+          kill -- -"$SERVER_PID" 2>/dev/null || true
+          sleep 3
+
+          if [ "$READY" -ne 1 ]; then
+            echo "Dedicated server did not reach ready state"
+            tail -200 ../server-console.log || true
+            exit 1
+          fi
+          test -f run/world/level.dat
+          rm -rf run/saves/RuntimeTest
+          mkdir -p run/saves/RuntimeTest
+          cp -a run/world/. run/saves/RuntimeTest/
+
+      - name: Launch literal Minecraft client and get hit
+        shell: bash
+        run: |
+          set -uo pipefail
+          cd mdk
+          mkdir -p ../screenshots
+
+          Xvfb :99 -screen 0 1280x720x24 -ac +extension GLX +render -noreset > ../xvfb.log 2>&1 &
+          export DISPLAY=:99
+          openbox > ../openbox.log 2>&1 &
+          sleep 2
+          glxinfo -B > ../glxinfo.txt 2>&1 || true
+
+          setsid ./gradlew --no-daemon runClient --args='--quickPlaySingleplayer RuntimeTest --width 854 --height 480' > ../client-console.log 2>&1 &
+          CLIENT_PID=$!
+
+          SPAWNED=0
+          for i in $(seq 1 240); do
+            if grep -q '\[HI-TEST\] ZOMBIE_SPAWNED' run/logs/latest.log 2>/dev/null; then
+              SPAWNED=1
+              break
+            fi
+            if ! kill -0 "$CLIENT_PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$SPAWNED" -eq 1 ]; then
+            xdotool search --name 'Minecraft' windowactivate 2>/dev/null || true
+            for n in $(seq -w 1 70); do
+              import -window root "../screenshots/frame_$n.png" 2>/dev/null || true
+              sleep 0.08
+            done
+          fi
+
+          RESULT=0
+          for i in $(seq 1 120); do
+            if grep -q '\[HI-TEST\] PASS' run/logs/latest.log 2>/dev/null; then
+              RESULT=1
+              break
+            fi
+            if grep -q '\[HI-TEST\] FAIL' run/logs/latest.log 2>/dev/null; then
+              break
+            fi
+            if ! kill -0 "$CLIENT_PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          import -window root ../screenshots/final.png 2>/dev/null || true
+          cp run/logs/latest.log ../client-latest.log 2>/dev/null || true
+          grep -E '\[HI-TEST\]|hit_indicator|AbstractMethodError|InvalidMixinException|ERROR|FATAL' ../client-latest.log > ../filtered-runtime.log 2>/dev/null || true
+
+          kill -- -"$CLIENT_PID" 2>/dev/null || true
+          sleep 3
+
+          {
+            echo "=== REQUIRED MARKERS ==="
+            grep -E '\[HI-TEST\]' ../client-latest.log || true
+            echo
+            echo "=== HIT INDICATOR / FATALS ==="
+            grep -E 'hit_indicator|AbstractMethodError|InvalidMixinException|FATAL' ../client-latest.log || true
+          } > ../runtime-summary.txt
+
+          if [ "$RESULT" -ne 1 ]; then
+            echo "Literal hit test did not reach PASS"
+            cat ../runtime-summary.txt
+            exit 1
+          fi
+
+      - name: Assert Hit Indicator client behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '\[HI-TEST\] PLAYER_LOGGED_IN' client-latest.log
+          grep -q '\[HI-TEST\] ZOMBIE_SPAWNED' client-latest.log
+          grep -q '\[HI-TEST\] CLIENT_WINDUP_ACTIVE' client-latest.log
+          grep -q '\[HI-TEST\] RENDER_STAGE_WITH_ACTIVE' client-latest.log
+          grep -q '\[HI-TEST\] PLAYER_DAMAGED' client-latest.log
+          grep -q '\[HI-TEST\] PASS' client-latest.log
+          ! grep -q '\[HI-TEST\] FAIL' client-latest.log
+          ! grep -q 'AbstractMethodError' client-latest.log
+          ! grep -q 'InvalidMixinException' client-latest.log
+          echo 'LITERAL_RUNTIME_TEST_PASS' >> runtime-summary.txt
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hit-indicator-literal-runtime-evidence
+          if-no-files-found: warn
+          path: |
+            server-console.log
+            server-latest.log
+            client-console.log
+            client-latest.log
+            filtered-runtime.log
+            runtime-summary.txt
+            glxinfo.txt
+            xvfb.log
+            openbox.log
+            screenshots/
+            mdk/run/crash-reports/
