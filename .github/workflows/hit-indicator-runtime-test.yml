@@ -147,7 +147,7 @@ jobs:
           sleep 2
           glxinfo -B > ../glxinfo.txt 2>&1 || true
 
-          setsid ./gradlew --no-daemon runClient --args='--quickPlaySingleplayer RuntimeTest --width 854 --height 480' > ../client-console.log 2>&1 &
+          setsid ./gradlew --no-daemon runClient > ../client-console.log 2>&1 &
           CLIENT_PID=$!
 
           SPAWNED=0
