@@ -86,6 +86,22 @@ jobs:
           cp /tmp/hit_indicator-1.21.1-neoforge-v3.jar run/mods/
 
           sed -i '/dependencies {/a\    compileOnly files("libs/hit_indicator-1.21.1-neoforge-v3.jar")' build.gradle
+          python - <<'PY2'
+from pathlib import Path
+p = Path('build.gradle')
+s = p.read_text()
+needle = '''        client {
+            client()
+'''
+replacement = '''        client {
+            client()
+            programArguments.addAll '--quickPlaySingleplayer', 'RuntimeTest', '--width', '854', '--height', '480'
+'''
+if needle not in s:
+    raise SystemExit('client run block not found')
+p.write_text(s.replace(needle, replacement, 1))
+PY2
+
           chmod +x gradlew
           ./gradlew --no-daemon compileJava
 
