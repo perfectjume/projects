@@ -37,6 +37,7 @@ public final class RuntimeTestClient {
     private static boolean cancelClearedLogged;
     private static boolean cameraStartedLogged;
     private static boolean cameraAppliedLogged;
+    private static boolean directFreezeProbeLogged;
     private static Field cameraTicksField;
 
     @SubscribeEvent
@@ -68,6 +69,15 @@ public final class RuntimeTestClient {
 
             Entity entity = mc.level.getEntity(id);
             if (entity instanceof LivingEntity living && WindupTracker.shouldFreeze(living)) {
+                if ("FREEZE".equals(scenario) && !directFreezeProbeLogged) {
+                    int before = living.tickCount;
+                    living.tick();
+                    int after = living.tickCount;
+                    directFreezeProbeLogged = true;
+                    LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_DIRECT_PROBE before={} after={} canceled={}",
+                            before, after, before == after);
+                }
+
                 String freezeKey = scenario + ":" + id;
                 if (loggedFreeze.add(freezeKey)) {
                     LOGGER.info("[HI-MATRIX] CLIENT_FREEZE_TRUE scenario={} id={} kind={} tickCount={}",
