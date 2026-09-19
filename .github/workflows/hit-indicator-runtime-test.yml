@@ -97,25 +97,16 @@ jobs:
           sed -i '/dependencies {/a\    compileOnly files("libs/hit_indicator-1.21.1-neoforge-v5.jar")' build.gradle
           sed -i "/^[[:space:]]*client()$/a\\            programArguments.addAll '--quickPlaySingleplayer', 'RuntimeTest', '--width', '854', '--height', '480'" build.gradle
 
-          printf '%s\n' \
-            '' \
-            'tasks.register("printCompileClasspath") {' \
-            '    doLast {' \
-            '        println sourceSets.main.compileClasspath.asPath' \
-            '    }' \
-            '}' >> build.gradle
+          mkdir -p src/main/java/com/misanthropy/hit_indicator/server
+          cp ../runtime-test/ParticleCompat.java src/main/java/com/misanthropy/hit_indicator/server/ParticleCompat.java
 
           chmod +x gradlew
           ./gradlew --no-daemon compileJava
 
-          CP="$(./gradlew --no-daemon -q printCompileClasspath | tail -n 1)"
-          mkdir -p /tmp/v6classes
-          javac -cp "$CP:/tmp/hit_indicator-1.21.1-neoforge-v5.jar" \
-            -d /tmp/v6classes ../runtime-test/ParticleCompat.java
-          test -f /tmp/v6classes/com/misanthropy/hit_indicator/server/ParticleCompat.class
+          test -f build/classes/java/main/com/misanthropy/hit_indicator/server/ParticleCompat.class
           python ../runtime-test/patch_v6.py \
             /tmp/hit_indicator-1.21.1-neoforge-v5.jar \
-            /tmp/v6classes/com/misanthropy/hit_indicator/server/ParticleCompat.class \
+            build/classes/java/main/com/misanthropy/hit_indicator/server/ParticleCompat.class \
             /tmp/hit_indicator-1.21.1-neoforge-v6.jar
           unzip -t /tmp/hit_indicator-1.21.1-neoforge-v6.jar
           javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v6.jar -c -p \
