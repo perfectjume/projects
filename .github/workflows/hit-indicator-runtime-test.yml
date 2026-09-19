@@ -273,6 +273,14 @@ jobs:
           grep -q '\[HI-MATRIX\] CLIENT_END scenario=PARRY .* reason=3' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_CAMERA_SHAKE_STARTED' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_CAMERA_SHAKE_APPLIED' client-latest.log
+          grep -q '\[HI-MATRIX\] API_HEAVY_LANDED kind=LUNGE' client-latest.log
+          grep -q '\[HI-MATRIX\] API_HEAVY_LANDED kind=SLAM' client-latest.log
+          grep -q '\[HI-MATRIX\] API_HEAVY_LANDED kind=SURE_HIT' client-latest.log
+          grep -q '\[HI-MATRIX\] API_HEAVY_DODGED kind=LUNGE' client-latest.log
+          grep -q '\[HI-MATRIX\] API_HEAVY_PARRIED kind=SURE_HIT' client-latest.log
+          grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=LUNGE' client-latest.log
+          grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=SLAM' client-latest.log
+          grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=SURE_HIT' client-latest.log
           ! grep -q '\[HI-MATRIX\] FAIL' client-latest.log
           ! grep -q 'NoSuchFieldError' client-latest.log
           ! grep -q 'AbstractMethodError' client-latest.log
