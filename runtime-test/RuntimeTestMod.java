@@ -1,13 +1,24 @@
 package com.example.examplemod;
 
 import com.misanthropy.hit_indicator.HitIndicatorConfig;
+import com.misanthropy.hit_indicator.api.HitIndicatorApi.HeavyKind;
+import com.misanthropy.hit_indicator.server.AttackInterceptor;
+import com.misanthropy.hit_indicator.server.ShotInterceptor;
 import com.mojang.logging.LogUtils;
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.Skeleton;
 import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
@@ -22,84 +33,437 @@ import org.slf4j.Logger;
 public final class RuntimeTestMod {
     public static final String MODID = "hitindicatortest";
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static final int BX = 0;
+    private static final int BY = 120;
+    private static final int BZ = 0;
+
+    private enum Scenario {
+        MELEE,
+        CANCEL,
+        LUNGE,
+        DODGE,
+        SLAM,
+        SURE,
+        PARRY,
+        WHIFF,
+        RANGED,
+        CROWD
+    }
+
+    private static final Scenario[] ORDER = Scenario.values();
     private static ServerPlayer player;
-    private static Zombie zombie;
+    private static LivingEntity attacker;
+    private static final List<Entity> spawned = new ArrayList<>();
     private static int loginTick = -1;
-    private static float startHealth = -1.0F;
-    private static boolean spawned;
+    private static int scenarioIndex = -1;
+    private static int scenarioStartTick = -1;
+    private static int finishTick = -1;
+    private static float startHealth;
+    private static boolean actionStarted;
     private static boolean done;
-    private static boolean failed;
+    private static volatile String currentScenario = "WAITING";
 
     public RuntimeTestMod(IEventBus modBus, ModContainer container) {
-        LOGGER.info("[HI-TEST] HELPER_LOADED");
+        LOGGER.info("[HI-MATRIX] HELPER_LOADED");
+    }
+
+    public static String currentScenario() {
+        return currentScenario;
     }
 
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (event.getEntity() instanceof ServerPlayer sp) {
-            player = sp;
-            loginTick = sp.getServer().getTickCount();
-            spawned = false;
-            done = false;
-            failed = false;
-            HitIndicatorConfig.WINDUP_TICKS.set(40);
-            LOGGER.info("[HI-TEST] PLAYER_LOGGED_IN tick={} health={} windupTicks={}",
-                    loginTick, sp.getHealth(), HitIndicatorConfig.WINDUP_TICKS.get());
-        }
+        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+        player = sp;
+        loginTick = sp.getServer().getTickCount();
+        scenarioIndex = -1;
+        scenarioStartTick = -1;
+        finishTick = -1;
+        actionStarted = false;
+        done = false;
+        currentScenario = "WAITING";
+        AttackInterceptor.setDodgeCheck(p -> false);
+        configureBase();
+        LOGGER.info("[HI-MATRIX] PLAYER_LOGGED_IN tick={} health={}", loginTick, sp.getHealth());
     }
 
     @SubscribeEvent
     public static void onTick(ServerTickEvent.Post event) {
-        if (player == null || player.isRemoved() || done || failed) return;
-        int elapsed = event.getServer().getTickCount() - loginTick;
+        if (player == null || player.isRemoved() || done) return;
+        int now = event.getServer().getTickCount();
 
-        if (!spawned && elapsed >= 80) {
-            ServerLevel level = player.serverLevel();
-            int bx = 0, by = 120, bz = 0;
-            for (int x = -4; x <= 4; x++) {
-                for (int z = -4; z <= 4; z++) {
-                    level.setBlockAndUpdate(new BlockPos(bx + x, by, bz + z), Blocks.STONE.defaultBlockState());
-                    level.setBlockAndUpdate(new BlockPos(bx + x, by + 4, bz + z), Blocks.STONE.defaultBlockState());
-                    for (int y = 1; y <= 3; y++) {
-                        level.setBlockAndUpdate(new BlockPos(bx + x, by + y, bz + z), Blocks.AIR.defaultBlockState());
-                    }
-                }
+        if (scenarioIndex < 0) {
+            if (now - loginTick < 60) return;
+            buildArena(player.serverLevel());
+            startNext(now);
+            return;
+        }
+
+        if (finishTick >= 0) {
+            if (now - finishTick >= 25) startNext(now);
+            return;
+        }
+
+        Scenario s = ORDER[scenarioIndex];
+        int t = now - scenarioStartTick;
+        try {
+            switch (s) {
+                case MELEE -> testMelee(t, now);
+                case CANCEL -> testCancel(t, now);
+                case LUNGE -> testLunge(t, now);
+                case DODGE -> testDodge(t, now);
+                case SLAM -> testSlam(t, now);
+                case SURE -> testSure(t, now);
+                case PARRY -> testParry(t, now);
+                case WHIFF -> testWhiff(t, now);
+                case RANGED -> testRanged(t, now);
+                case CROWD -> testCrowd(t, now);
             }
+            if (t > 180) fail("timeout scenario=" + s + " pending=" + pending());
+        } catch (Throwable error) {
+            LOGGER.error("[HI-MATRIX] FAIL exception scenario={}", s, error);
+            done = true;
+        }
+    }
 
-            player.teleportTo(bx + 0.5, by + 1.0, bz + 0.5);
-            player.setHealth(player.getMaxHealth());
-            startHealth = player.getHealth();
+    private static void startNext(int now) {
+        cleanup();
+        scenarioIndex++;
+        if (scenarioIndex >= ORDER.length) {
+            currentScenario = "DONE";
+            done = true;
+            AttackInterceptor.setDodgeCheck(p -> false);
+            LOGGER.info("[HI-MATRIX] SERVER_ALL_SCENARIOS_PASS");
+            return;
+        }
 
-            Zombie z = EntityType.ZOMBIE.create(level);
-            if (z == null) {
-                failed = true;
-                LOGGER.error("[HI-TEST] FAIL zombie creation returned null");
+        configureBase();
+        player.setInvulnerable(false);
+        player.removeAllEffects();
+        player.setHealth(player.getMaxHealth());
+        player.teleportTo(BX + 0.5, BY + 1.0, BZ + 0.5);
+        startHealth = player.getHealth();
+        scenarioStartTick = now;
+        finishTick = -1;
+        actionStarted = false;
+        currentScenario = ORDER[scenarioIndex].name();
+        LOGGER.info("[HI-MATRIX] SCENARIO_START {} health={}", currentScenario, startHealth);
+    }
+
+    private static void configureBase() {
+        HitIndicatorConfig.ENABLED.set(true);
+        HitIndicatorConfig.WINDUP_TICKS.set(16);
+        HitIndicatorConfig.REACH_DISTANCE.set(4.5D);
+        HitIndicatorConfig.LAND_IF_OUT_OF_RANGE.set(false);
+        HitIndicatorConfig.CROWD_ENABLED.set(false);
+        HitIndicatorConfig.RANGED_ENABLED.set(true);
+        HitIndicatorConfig.RANGED_WINDUP_TICKS.set(16);
+        HitIndicatorConfig.HEAVY_ENABLED.set(false);
+        HitIndicatorConfig.HEAVY_BASE_CHANCE.set(0.0D);
+        HitIndicatorConfig.HEAVY_CHANCE_CAP.set(1.0D);
+        HitIndicatorConfig.HEAVY_VICTIM_COOLDOWN_TICKS.set(0);
+        HitIndicatorConfig.HEAVY_SLAM_SHARE.set(0.0D);
+        HitIndicatorConfig.LUNGE_WINDUP_TICKS.set(20);
+        HitIndicatorConfig.LUNGE_MOVE_TICKS.set(6);
+        HitIndicatorConfig.SLAM_WINDUP_TICKS.set(24);
+        HitIndicatorConfig.SLAM_HOP_TICKS.set(8);
+        HitIndicatorConfig.SURE_ENABLED.set(false);
+        HitIndicatorConfig.SURE_BASE_CHANCE.set(0.0D);
+        HitIndicatorConfig.SURE_CHANCE_CAP.set(1.0D);
+        HitIndicatorConfig.SURE_WINDUP_TICKS.set(18);
+        HitIndicatorConfig.SURE_MOVE_TICKS.set(4);
+        HitIndicatorConfig.HEAVY_WHIFF_RECOVERY_TICKS.set(20);
+        HitIndicatorConfig.HEAVY_DODGE_STUN_TICKS.set(20);
+        HitIndicatorConfig.SURE_PARRY_STUN_TICKS.set(20);
+        AttackInterceptor.setDodgeCheck(p -> false);
+    }
+
+    private static void testMelee(int t, int now) {
+        if (!actionStarted && t >= 5) {
+            Zombie z = zombie(1.5D);
+            triggerMelee(z, null);
+        }
+        if (actionStarted && player.getHealth() < startHealth) {
+            pass(now, "MELEE_DAMAGE before=" + startHealth + " after=" + player.getHealth());
+        }
+    }
+
+    private static void testCancel(int t, int now) {
+        if (!actionStarted && t >= 5) {
+            HitIndicatorConfig.WINDUP_TICKS.set(30);
+            Zombie z = zombie(1.5D);
+            triggerMelee(z, null);
+        }
+        if (actionStarted && t >= 10 && AttackInterceptor.isWindingUp(attacker)) {
+            boolean canceled = AttackInterceptor.cancelPendingHit(attacker);
+            LOGGER.info("[HI-MATRIX] CANCEL_REQUEST result={} pendingAfter={}",
+                    canceled, AttackInterceptor.isWindingUp(attacker));
+            if (!canceled || AttackInterceptor.isWindingUp(attacker)) {
+                fail("cancelPendingHit did not clear pending");
                 return;
             }
+            pass(now, "CANCEL_PENDING_CLEARED");
+        }
+    }
 
-            z.moveTo(bx + 2.0, by + 1.0, bz + 0.5, 90.0F, 0.0F);
-            z.setPersistenceRequired();
-            z.setTarget(player);
-            level.addFreshEntity(z);
-            zombie = z;
-            spawned = true;
-            LOGGER.info("[HI-TEST] ZOMBIE_SPAWNED id={} health={} distance={}",
-                    z.getId(), startHealth, z.distanceTo(player));
+    private static void testLunge(int t, int now) {
+        if (!actionStarted && t >= 5) {
+            forceLunge();
+            Zombie z = zombie(1.5D);
+            triggerMelee(z, HeavyKind.LUNGE);
+        }
+        if (actionStarted && player.getHealth() < startHealth) {
+            pass(now, "LUNGE_DAMAGE before=" + startHealth + " after=" + player.getHealth());
+        }
+    }
+
+    private static void testDodge(int t, int now) {
+        if (!actionStarted && t >= 5) {
+            forceLunge();
+            AttackInterceptor.setDodgeCheck(p -> true);
+            Zombie z = zombie(1.5D);
+            triggerMelee(z, HeavyKind.LUNGE);
+        }
+        if (actionStarted && !AttackInterceptor.isWindingUp(attacker) && t > 20) {
+            if (player.getHealth() != startHealth) {
+                fail("dodged lunge damaged player before=" + startHealth + " after=" + player.getHealth());
+                return;
+            }
+            if (!AttackInterceptor.isHeld(attacker)) {
+                fail("dodged lunge did not hold attacker");
+                return;
+            }
+            pass(now, "DODGE_NO_DAMAGE_AND_HELD");
+        }
+    }
+
+    private static void testSlam(int t, int now) {
+        if (!actionStarted && t >= 5) {
+            forceSlam();
+            Zombie z = zombie(1.5D);
+            triggerMelee(z, HeavyKind.SLAM);
+        }
+        if (actionStarted && player.getHealth() < startHealth) {
+            pass(now, "SLAM_DAMAGE before=" + startHealth + " after=" + player.getHealth());
+        }
+    }
+
+    private static void testSure(int t, int now) {
+        if (!actionStarted && t >= 5) {
+            forceSure();
+            Zombie z = zombie(1.5D);
+            triggerMelee(z, HeavyKind.SURE_HIT);
+        }
+        if (actionStarted && player.getHealth() < startHealth) {
+            pass(now, "SURE_DAMAGE before=" + startHealth + " after=" + player.getHealth());
+        }
+    }
+
+    private static void testParry(int t, int now) {
+        if (!actionStarted && t >= 5) {
+            forceSure();
+            Zombie z = zombie(1.5D);
+            triggerMelee(z, HeavyKind.SURE_HIT);
+        }
+        if (actionStarted && t >= 9 && AttackInterceptor.isWindingUp(attacker)) {
+            player.setInvulnerable(true);
+        }
+        if (actionStarted && !AttackInterceptor.isWindingUp(attacker) && t > 22) {
+            player.setInvulnerable(false);
+            if (player.getHealth() != startHealth) {
+                fail("parried sure hit damaged player before=" + startHealth + " after=" + player.getHealth());
+                return;
+            }
+            if (!AttackInterceptor.isHeld(attacker)) {
+                fail("parried sure hit did not hold attacker");
+                return;
+            }
+            pass(now, "PARRY_NO_DAMAGE_AND_HELD");
+        }
+    }
+
+    private static void testWhiff(int t, int now) {
+        if (!actionStarted && t >= 5) {
+            forceLunge();
+            Zombie z = zombie(1.5D);
+            triggerMelee(z, HeavyKind.LUNGE);
+        }
+        if (actionStarted && t == 10) {
+            player.teleportTo(BX + 25.5D, BY + 1.0D, BZ + 0.5D);
+            LOGGER.info("[HI-MATRIX] WHIFF_PLAYER_MOVED distance={}", attacker.distanceTo(player));
+        }
+        if (actionStarted && !AttackInterceptor.isWindingUp(attacker) && t > 22) {
+            if (player.getHealth() != startHealth) {
+                fail("whiff damaged player before=" + startHealth + " after=" + player.getHealth());
+                return;
+            }
+            if (!AttackInterceptor.isHeld(attacker)) {
+                fail("whiff did not hold attacker");
+                return;
+            }
+            pass(now, "WHIFF_NO_DAMAGE_AND_HELD");
+        }
+    }
+
+    private static void testRanged(int t, int now) {
+        if (!actionStarted && t >= 5) {
+            Skeleton skeleton = skeleton(5.0D);
+            skeleton.performRangedAttack(player, 1.0F);
+            skeleton.setNoAi(true);
+            attacker = skeleton;
+            actionStarted = true;
+            boolean pending = ShotInterceptor.isWindingUp(skeleton.getId());
+            LOGGER.info("[HI-MATRIX] RANGED_TRIGGER pending={} id={}", pending, skeleton.getId());
+            if (!pending) {
+                fail("ranged projectile was not intercepted");
+                return;
+            }
+        }
+        if (actionStarted && !ShotInterceptor.isWindingUp(attacker.getId()) && t > 18) {
+            ServerLevel level = player.serverLevel();
+            AABB box = new AABB(BX - 15, BY - 5, BZ - 15, BX + 15, BY + 10, BZ + 15);
+            boolean released = level.getEntitiesOfClass(Projectile.class, box,
+                    p -> p.getOwner() == attacker).stream().findAny().isPresent();
+            LOGGER.info("[HI-MATRIX] RANGED_RELEASED projectilePresent={}", released);
+            if (!released) {
+                fail("ranged pending ended without released projectile");
+                return;
+            }
+            pass(now, "RANGED_HELD_THEN_RELEASED");
+        }
+    }
+
+    private static void testCrowd(int t, int now) {
+        if (actionStarted || t < 5) return;
+        HitIndicatorConfig.CROWD_ENABLED.set(true);
+        HitIndicatorConfig.CROWD_MAX_ATTACKERS.set(1);
+        HitIndicatorConfig.CROWD_SPACING_TICKS.set(20);
+        HitIndicatorConfig.WINDUP_TICKS.set(30);
+
+        List<Zombie> zombies = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            Zombie z = zombie(1.5D + i * 0.1D);
+            zombies.add(z);
+            z.doHurtTarget(player);
+            z.setNoAi(true);
+        }
+        int winding = 0;
+        for (Zombie z : zombies) if (AttackInterceptor.isWindingUp(z)) winding++;
+        LOGGER.info("[HI-MATRIX] CROWD_WINDING count={} expected=1", winding);
+        if (winding != 1) {
+            fail("crowd maxAttackers=1 allowed winding=" + winding);
             return;
         }
+        for (Zombie z : zombies) AttackInterceptor.cancelPendingHit(z);
+        actionStarted = true;
+        pass(now, "CROWD_MAX_ONE_ENFORCED");
+    }
 
-        if (spawned && player.getHealth() < startHealth) {
-            done = true;
-            LOGGER.info("[HI-TEST] PLAYER_DAMAGED before={} after={} elapsedSinceLogin={} zombieAlive={}",
-                    startHealth, player.getHealth(), elapsed, zombie != null && zombie.isAlive());
-            LOGGER.info("[HI-TEST] PASS");
+    private static void forceLunge() {
+        HitIndicatorConfig.HEAVY_ENABLED.set(true);
+        HitIndicatorConfig.HEAVY_BASE_CHANCE.set(1.0D);
+        HitIndicatorConfig.HEAVY_CHANCE_CAP.set(1.0D);
+        HitIndicatorConfig.HEAVY_SLAM_SHARE.set(0.0D);
+        HitIndicatorConfig.SURE_ENABLED.set(false);
+    }
+
+    private static void forceSlam() {
+        HitIndicatorConfig.HEAVY_ENABLED.set(true);
+        HitIndicatorConfig.HEAVY_BASE_CHANCE.set(1.0D);
+        HitIndicatorConfig.HEAVY_CHANCE_CAP.set(1.0D);
+        HitIndicatorConfig.HEAVY_SLAM_SHARE.set(1.0D);
+        HitIndicatorConfig.SURE_ENABLED.set(false);
+    }
+
+    private static void forceSure() {
+        HitIndicatorConfig.HEAVY_ENABLED.set(true);
+        HitIndicatorConfig.HEAVY_BASE_CHANCE.set(0.0D);
+        HitIndicatorConfig.HEAVY_CHANCE_CAP.set(1.0D);
+        HitIndicatorConfig.SURE_ENABLED.set(true);
+        HitIndicatorConfig.SURE_BASE_CHANCE.set(1.0D);
+        HitIndicatorConfig.SURE_CHANCE_CAP.set(1.0D);
+    }
+
+    private static void triggerMelee(Zombie z, HeavyKind expected) {
+        boolean directResult = z.doHurtTarget(player);
+        z.setNoAi(true);
+        attacker = z;
+        actionStarted = true;
+        boolean pending = AttackInterceptor.isWindingUp(z);
+        HeavyKind actual = AttackInterceptor.getPendingHeavy(z);
+        LOGGER.info("[HI-MATRIX] MELEE_TRIGGER scenario={} directResult={} pending={} expectedHeavy={} actualHeavy={} ticksLeft={}",
+                currentScenario, directResult, pending, expected, actual, AttackInterceptor.getWindupTicksLeft(z));
+        if (!pending) {
+            fail("melee attack was not intercepted scenario=" + currentScenario);
             return;
         }
-
-        if (spawned && elapsed > 500) {
-            failed = true;
-            LOGGER.error("[HI-TEST] FAIL no player health loss within timeout health={} startHealth={} zombieAlive={}",
-                    player.getHealth(), startHealth, zombie != null && zombie.isAlive());
+        if (actual != expected) {
+            fail("wrong heavy kind scenario=" + currentScenario + " expected=" + expected + " actual=" + actual);
         }
+    }
+
+    private static Zombie zombie(double distance) {
+        ServerLevel level = player.serverLevel();
+        Zombie z = EntityType.ZOMBIE.create(level);
+        if (z == null) throw new IllegalStateException("zombie creation returned null");
+        z.moveTo(BX + 0.5D + distance, BY + 1.0D, BZ + 0.5D, 90.0F, 0.0F);
+        z.setPersistenceRequired();
+        z.setTarget(player);
+        level.addFreshEntity(z);
+        spawned.add(z);
+        return z;
+    }
+
+    private static Skeleton skeleton(double distance) {
+        ServerLevel level = player.serverLevel();
+        Skeleton s = EntityType.SKELETON.create(level);
+        if (s == null) throw new IllegalStateException("skeleton creation returned null");
+        s.moveTo(BX + 0.5D + distance, BY + 1.0D, BZ + 0.5D, 90.0F, 0.0F);
+        s.setPersistenceRequired();
+        s.setTarget(player);
+        level.addFreshEntity(s);
+        spawned.add(s);
+        return s;
+    }
+
+    private static void buildArena(ServerLevel level) {
+        for (int x = -30; x <= 30; x++) {
+            for (int z = -8; z <= 8; z++) {
+                level.setBlockAndUpdate(new BlockPos(BX + x, BY, BZ + z), Blocks.STONE.defaultBlockState());
+                for (int y = 1; y <= 5; y++) {
+                    level.setBlockAndUpdate(new BlockPos(BX + x, BY + y, BZ + z), Blocks.AIR.defaultBlockState());
+                }
+            }
+        }
+        LOGGER.info("[HI-MATRIX] ARENA_READY");
+    }
+
+    private static boolean pending() {
+        return attacker != null && (AttackInterceptor.isWindingUp(attacker)
+                || ShotInterceptor.isWindingUp(attacker.getId()));
+    }
+
+    private static void pass(int now, String detail) {
+        if (finishTick >= 0) return;
+        finishTick = now;
+        LOGGER.info("[HI-MATRIX] SCENARIO_PASS {} {}", currentScenario, detail);
+    }
+
+    private static void fail(String detail) {
+        if (done) return;
+        done = true;
+        LOGGER.error("[HI-MATRIX] FAIL {}", detail);
+    }
+
+    private static void cleanup() {
+        player.setInvulnerable(false);
+        AttackInterceptor.setDodgeCheck(p -> false);
+        for (Entity entity : spawned) {
+            if (entity instanceof LivingEntity living) AttackInterceptor.cancelPendingHit(living);
+            if (!entity.isRemoved()) entity.discard();
+        }
+        spawned.clear();
+        attacker = null;
+        actionStarted = false;
     }
 }
