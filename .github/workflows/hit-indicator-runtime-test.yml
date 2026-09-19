@@ -29,7 +29,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb openbox xdotool imagemagick libgl1-mesa-dri mesa-utils
 
-      - name: Reconstruct v3 and create targeted v4
+      - name: Reconstruct v3 and create targeted v5
         shell: bash
         run: |
           set -euo pipefail
@@ -69,6 +69,11 @@ jobs:
           grep -q 'NOTE_BLOCK_BIT:Lnet/minecraft/core/Holder[$]Reference;' /tmp/windup-v4.javap
           grep -q 'NOTE_BLOCK_BELL:Lnet/minecraft/core/Holder[$]Reference;' /tmp/windup-v4.javap
           grep -q 'CROSSBOW_LOADING_START:Lnet/minecraft/core/Holder;' /tmp/windup-v4.javap
+          python runtime-test/patch_v5.py /tmp/hit_indicator-1.21.1-neoforge-v4.jar /tmp/hit_indicator-1.21.1-neoforge-v5.jar
+          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v5.jar
+          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v5.jar -verbose com.misanthropy.hit_indicator.server.AttackInterceptor > /tmp/attack-v5.javap
+          grep -q 'ServerPlayer.connection:Lnet/minecraft/server/network/ServerGamePacketListenerImpl;' /tmp/attack-v5.javap
+          ! grep -q 'ServerPlayer.connection:Lnet/minecraft/server/level/ServerGamePacketListenerImpl;' /tmp/attack-v5.javap
 
       - name: Prepare exact NeoForge 21.1.249 MDK
         shell: bash
@@ -86,10 +91,10 @@ jobs:
           mkdir -p src/main/java/com/example/examplemod libs run/mods
           cp ../runtime-test/RuntimeTestMod.java src/main/java/com/example/examplemod/RuntimeTestMod.java
           cp ../runtime-test/RuntimeTestClient.java src/main/java/com/example/examplemod/RuntimeTestClient.java
-          cp /tmp/hit_indicator-1.21.1-neoforge-v4.jar libs/
-          cp /tmp/hit_indicator-1.21.1-neoforge-v4.jar run/mods/
+          cp /tmp/hit_indicator-1.21.1-neoforge-v5.jar libs/
+          cp /tmp/hit_indicator-1.21.1-neoforge-v5.jar run/mods/
 
-          sed -i '/dependencies {/a\    compileOnly files("libs/hit_indicator-1.21.1-neoforge-v4.jar")' build.gradle
+          sed -i '/dependencies {/a\    compileOnly files("libs/hit_indicator-1.21.1-neoforge-v5.jar")' build.gradle
           sed -i "/^[[:space:]]*client()$/a\\            programArguments.addAll '--quickPlaySingleplayer', 'RuntimeTest', '--width', '854', '--height', '480'" build.gradle
 
           chmod +x gradlew
@@ -268,5 +273,6 @@ jobs:
             openbox.log
             screenshots/
             mdk/run/crash-reports/
-            /tmp/hit_indicator-1.21.1-neoforge-v4.jar
+            /tmp/hit_indicator-1.21.1-neoforge-v5.jar
             /tmp/windup-v4.javap
+            /tmp/attack-v5.javap
