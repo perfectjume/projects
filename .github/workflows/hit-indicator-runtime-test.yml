@@ -97,8 +97,36 @@ jobs:
           sed -i '/dependencies {/a\    compileOnly files("libs/hit_indicator-1.21.1-neoforge-v5.jar")' build.gradle
           sed -i "/^[[:space:]]*client()$/a\\            programArguments.addAll '--quickPlaySingleplayer', 'RuntimeTest', '--width', '854', '--height', '480'" build.gradle
 
+          cat >> build.gradle <<'GRADLE'
+
+tasks.register("printCompileClasspath") {
+    doLast {
+        println sourceSets.main.compileClasspath.asPath
+    }
+}
+GRADLE
+
           chmod +x gradlew
           ./gradlew --no-daemon compileJava
+
+          CP="$(./gradlew --no-daemon -q printCompileClasspath | tail -n 1)"
+          mkdir -p /tmp/v6classes
+          javac -cp "$CP:/tmp/hit_indicator-1.21.1-neoforge-v5.jar" \
+            -d /tmp/v6classes ../runtime-test/ParticleCompat.java
+          test -f /tmp/v6classes/com/misanthropy/hit_indicator/server/ParticleCompat.class
+          python ../runtime-test/patch_v6.py \
+            /tmp/hit_indicator-1.21.1-neoforge-v5.jar \
+            /tmp/v6classes/com/misanthropy/hit_indicator/server/ParticleCompat.class \
+            /tmp/hit_indicator-1.21.1-neoforge-v6.jar
+          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v6.jar
+          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v6.jar -c -p \
+            com.misanthropy.hit_indicator.server.AttackInterceptor > /tmp/attack-v6.javap
+          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v6.jar -c -p \
+            com.misanthropy.hit_indicator.server.ParticleCompat > /tmp/particle-compat-v6.javap
+          grep -q 'ParticleCompat.groundParticleSpec' /tmp/attack-v6.javap
+          grep -q 'NbtUtils.writeBlockState' /tmp/particle-compat-v6.javap
+          rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
+          cp /tmp/hit_indicator-1.21.1-neoforge-v6.jar run/mods/
 
       - name: Generate real Minecraft world
         shell: bash
@@ -253,7 +281,9 @@ jobs:
           ! grep -q 'AbstractMethodError' client-latest.log
           ! grep -q 'InvalidMixinException' client-latest.log
           ! grep -q '/FATAL]' client-latest.log
+          ! grep -q 'cannot parse particle' client-latest.log
           echo 'FULL_RUNTIME_MATRIX_PASS' >> runtime-summary.txt
+          echo 'GROUND_PARTICLE_PARSE_PASS' >> runtime-summary.txt
 
       - name: Upload runtime evidence
         if: always()
@@ -274,5 +304,8 @@ jobs:
             screenshots/
             mdk/run/crash-reports/
             /tmp/hit_indicator-1.21.1-neoforge-v5.jar
+            /tmp/hit_indicator-1.21.1-neoforge-v6.jar
             /tmp/windup-v4.javap
             /tmp/attack-v5.javap
+            /tmp/attack-v6.javap
+            /tmp/particle-compat-v6.javap
