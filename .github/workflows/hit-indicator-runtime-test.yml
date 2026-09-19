@@ -287,6 +287,10 @@ jobs:
           ! grep -q 'InvalidMixinException' client-latest.log
           ! grep -q '/FATAL]' client-latest.log
           ! grep -q 'cannot parse particle' client-latest.log
+          ! grep -Eq 'NoSuchMethodError|NoClassDefFoundError|ClassNotFoundException|IncompatibleClassChangeError|VerifyError' client-latest.log
+          ! grep -Eq 'NoSuchMethodError|NoClassDefFoundError|ClassNotFoundException|IncompatibleClassChangeError|VerifyError' server-latest.log
+          ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' client-latest.log
+          ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' server-latest.log
           echo 'FULL_RUNTIME_MATRIX_PASS' >> runtime-summary.txt
           echo 'GROUND_PARTICLE_PARSE_PASS' >> runtime-summary.txt
 
