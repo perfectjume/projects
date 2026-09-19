@@ -1,7 +1,9 @@
 package com.example.examplemod;
 
 import com.misanthropy.hit_indicator.HitIndicatorConfig;
+import com.misanthropy.hit_indicator.api.HitIndicatorApi;
 import com.misanthropy.hit_indicator.api.HitIndicatorApi.HeavyKind;
+import com.misanthropy.hit_indicator.api.HitIndicatorApi.HeavyListener;
 import com.misanthropy.hit_indicator.server.AttackInterceptor;
 import com.misanthropy.hit_indicator.server.ShotInterceptor;
 import com.mojang.logging.LogUtils;
@@ -27,6 +29,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.slf4j.Logger;
@@ -68,11 +71,40 @@ public final class RuntimeTestMod {
     private static volatile String currentScenario = "WAITING";
 
     public RuntimeTestMod(IEventBus modBus, ModContainer container) {
+        HitIndicatorApi.addHeavyListener(new HeavyListener() {
+            @Override
+            public void onHeavyLanded(LivingEntity source, ServerPlayer victim, HeavyKind kind) {
+                LOGGER.info("[HI-MATRIX] API_HEAVY_LANDED kind={} source={} victim={}",
+                        kind, source.getType(), victim.getGameProfile().getName());
+            }
+
+            @Override
+            public void onHeavyDodged(LivingEntity source, ServerPlayer victim, HeavyKind kind) {
+                LOGGER.info("[HI-MATRIX] API_HEAVY_DODGED kind={} source={} victim={}",
+                        kind, source.getType(), victim.getGameProfile().getName());
+            }
+
+            @Override
+            public void onHeavyParried(LivingEntity source, ServerPlayer victim, HeavyKind kind) {
+                LOGGER.info("[HI-MATRIX] API_HEAVY_PARRIED kind={} source={} victim={}",
+                        kind, source.getType(), victim.getGameProfile().getName());
+            }
+        });
         LOGGER.info("[HI-MATRIX] HELPER_LOADED");
     }
 
     public static String currentScenario() {
         return currentScenario;
+    }
+
+    @SubscribeEvent
+    public static void onDamagePre(LivingDamageEvent.Pre event) {
+        if (player != null && event.getEntity() == player) {
+            HeavyKind kind = HitIndicatorApi.getDeliveringHeavy(player);
+            if (kind != null) {
+                LOGGER.info("[HI-MATRIX] API_DELIVERING_HEAVY kind={} amount={}", kind, event.getNewDamage());
+            }
+        }
     }
 
     @SubscribeEvent
