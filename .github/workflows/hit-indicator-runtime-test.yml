@@ -97,14 +97,13 @@ jobs:
           sed -i '/dependencies {/a\    compileOnly files("libs/hit_indicator-1.21.1-neoforge-v5.jar")' build.gradle
           sed -i "/^[[:space:]]*client()$/a\\            programArguments.addAll '--quickPlaySingleplayer', 'RuntimeTest', '--width', '854', '--height', '480'" build.gradle
 
-          cat >> build.gradle <<'GRADLE'
-
-tasks.register("printCompileClasspath") {
-    doLast {
-        println sourceSets.main.compileClasspath.asPath
-    }
-}
-GRADLE
+          printf '%s\n' \
+            '' \
+            'tasks.register("printCompileClasspath") {' \
+            '    doLast {' \
+            '        println sourceSets.main.compileClasspath.asPath' \
+            '    }' \
+            '}' >> build.gradle
 
           chmod +x gradlew
           ./gradlew --no-daemon compileJava
