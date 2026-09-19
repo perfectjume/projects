@@ -115,6 +115,13 @@ jobs:
             com.misanthropy.hit_indicator.server.ParticleCompat > /tmp/particle-compat-v6.javap
           grep -q 'ParticleCompat.groundParticleSpec' /tmp/attack-v6.javap
           grep -q 'NbtUtils.writeBlockState' /tmp/particle-compat-v6.javap
+
+          # ParticleCompat belongs only inside the patched Hit Indicator jar.
+          # Remove the temporary compiler input/output from the runtime-test module
+          # so JPMS does not see a split package across two modules.
+          rm -f src/main/java/com/misanthropy/hit_indicator/server/ParticleCompat.java
+          rm -f build/classes/java/main/com/misanthropy/hit_indicator/server/ParticleCompat.class
+
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
           cp /tmp/hit_indicator-1.21.1-neoforge-v6.jar run/mods/
 
