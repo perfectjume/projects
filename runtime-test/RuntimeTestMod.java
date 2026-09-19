@@ -43,6 +43,7 @@ public final class RuntimeTestMod {
     private enum Scenario {
         MELEE,
         CANCEL,
+        FREEZE,
         LUNGE,
         DODGE,
         SLAM,
@@ -113,6 +114,7 @@ public final class RuntimeTestMod {
             switch (s) {
                 case MELEE -> testMelee(t, now);
                 case CANCEL -> testCancel(t, now);
+                case FREEZE -> testFreeze(t, now);
                 case LUNGE -> testLunge(t, now);
                 case DODGE -> testDodge(t, now);
                 case SLAM -> testSlam(t, now);
@@ -206,6 +208,22 @@ public final class RuntimeTestMod {
                 return;
             }
             pass(now, "CANCEL_PENDING_CLEARED");
+        }
+    }
+
+    private static void testFreeze(int t, int now) {
+        if (!actionStarted && t >= 5) {
+            HitIndicatorConfig.WINDUP_TICKS.set(80);
+            Zombie z = zombie(1.5D);
+            triggerMelee(z, null);
+        }
+        if (actionStarted && t >= 50 && AttackInterceptor.isWindingUp(attacker)) {
+            boolean canceled = AttackInterceptor.cancelPendingHit(attacker);
+            if (!canceled || AttackInterceptor.isWindingUp(attacker)) {
+                fail("freeze scenario could not cancel long windup");
+                return;
+            }
+            pass(now, "LONG_MELEE_WINDUP_EXERCISED");
         }
     }
 
