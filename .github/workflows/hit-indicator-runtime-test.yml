@@ -143,6 +143,11 @@ jobs:
           cd mdk
           mkdir -p ../screenshots
 
+          cat > run/options.txt <<'EOT'
+          version:3955
+          onboardAccessibility:false
+          EOT
+
           Xvfb :99 -screen 0 1280x720x24 -ac +extension GLX +render -noreset > ../xvfb.log 2>&1 &
           export DISPLAY=:99
           openbox > ../openbox.log 2>&1 &
