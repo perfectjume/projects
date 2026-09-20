@@ -1,7 +1,17 @@
 package com.misanthropy.hit_indicator.server;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.misanthropy.hit_indicator.network.HitIndicatorNetwork;
 import com.mojang.logging.LogUtils;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -16,18 +26,13 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 
-/**
- * Universal, animation-agnostic melee predictor.
- *
- * Ground truth is still the real LivingIncomingDamageEvent.  This class only
- * starts the visual windup early.  If the real hit arrives before the ring
- * closes, AttackInterceptor keeps holding the damage for the remaining ticks.
- */
 public final class LearnedAttackPredictor {
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private static final int HISTORY_TICKS = 20;
     private static final int MAX_SAMPLES_PER_TYPE = 384;
@@ -37,6 +42,8 @@ public final class LearnedAttackPredictor {
     private static final int MIN_RING_TICKS = 6;
     private static final int SAFETY_TICKS = 2;
     private static final int FALSE_POSITIVE_GRACE = 4;
+    private static final int SAVE_INTERVAL_TICKS = 200;
+    private static final int STABLE_PREDICTION_TICKS = 2;
     private static final double SEARCH_RADIUS = 12.0D;
     private static final double MAX_MODEL_WIDTH = 4.0D;
     private static final double MAX_MODEL_HEIGHT = 6.0D;
@@ -44,18 +51,28 @@ public final class LearnedAttackPredictor {
     private static final Map<String, Profile> PROFILES = new HashMap<>();
     private static final Map<Integer, Track> TRACKS = new HashMap<>();
     private static final Map<Integer, Prediction> ACTIVE = new HashMap<>();
+
     private static int preparedRemaining = -1;
+    private static boolean loaded;
+    private static boolean dirty;
+    private static long lastSaveTick;
+    private static Path dataFile;
 
     private LearnedAttackPredictor() {}
 
     public static void tick(MinecraftServer server) {
+        ensureLoaded(server);
         long now = server.getTickCount();
 
         ACTIVE.entrySet().removeIf(e -> {
             Prediction p = e.getValue();
             if (now <= p.endTick + FALSE_POSITIVE_GRACE) return false;
             Track tr = TRACKS.get(e.getKey());
-            if (tr != null) tr.cooldownUntil = now + 4;
+            if (tr != null) {
+                tr.cooldownUntil = now + 4;
+                tr.candidateLead = -1;
+                tr.candidateStreak = 0;
+            }
             LOGGER.info("[HI-LEARN] PREDICTION_EXPIRED id={} type={} predictedEnd={} now={}",
                     e.getKey(), p.typeKey, p.endTick, now);
             return true;
@@ -73,6 +90,10 @@ public final class LearnedAttackPredictor {
         }
 
         TRACKS.entrySet().removeIf(e -> now - e.getValue().lastSeenTick > 200);
+
+        if (dirty && now - lastSaveTick >= SAVE_INTERVAL_TICKS) {
+            save(server);
+        }
     }
 
     private static void observe(long now, Mob mob, ServerPlayer player) {
@@ -92,9 +113,7 @@ public final class LearnedAttackPredictor {
         double closing = Double.isNaN(track.lastDistance) ? 0.0D : track.lastDistance - distance;
         Vec3 toTarget = player.position().subtract(mob.position());
         double facing = 0.0D;
-        if (toTarget.lengthSqr() > 1.0E-6D) {
-            facing = mob.getLookAngle().dot(toTarget.normalize());
-        }
+        if (toTarget.lengthSqr() > 1.0E-6D) facing = mob.getLookAngle().dot(toTarget.normalize());
 
         boolean los = mob.getSensing().hasLineOfSight(player);
         boolean aggressive = mob.isAggressive();
@@ -109,36 +128,50 @@ public final class LearnedAttackPredictor {
         track.lastSeenTick = now;
         track.victim = player.getUUID();
 
-        if (ACTIVE.containsKey(mob.getId())) return;
-        if (AttackInterceptor.isWindingUp(mob)) return;
-        if (now < track.cooldownUntil) return;
-        if (profile.confirmedHits < MIN_CONFIRMED_HITS || profile.samples.size() < 24) return;
+        if (ACTIVE.containsKey(mob.getId()) || AttackInterceptor.isWindingUp(mob)
+                || now < track.cooldownUntil
+                || profile.confirmedHits < MIN_CONFIRMED_HITS
+                || profile.samples.size() < 24) {
+            track.candidateStreak = 0;
+            track.candidateLead = -1;
+            return;
+        }
 
         PredictionEstimate estimate = estimate(profile, frame);
-        if (estimate == null) return;
-        if (estimate.leadTicks < 2 || estimate.leadTicks > MAX_PREDICT_LEAD) return;
-        if (estimate.avgDistance > 1.15D) return;
+        if (estimate == null || estimate.leadTicks < 2 || estimate.leadTicks > MAX_PREDICT_LEAD
+                || estimate.avgDistance > 1.15D) {
+            track.candidateStreak = 0;
+            track.candidateLead = -1;
+            return;
+        }
 
-        int duration = Math.max(MIN_RING_TICKS, Math.min(MAX_PREDICT_LEAD + SAFETY_TICKS,
-                estimate.leadTicks + SAFETY_TICKS));
+        if (track.candidateLead >= 0 && Math.abs(track.candidateLead - estimate.leadTicks) <= 2) {
+            track.candidateStreak++;
+            track.candidateLead = (track.candidateLead + estimate.leadTicks) / 2;
+        } else {
+            track.candidateLead = estimate.leadTicks;
+            track.candidateStreak = 1;
+        }
+        if (track.candidateStreak < STABLE_PREDICTION_TICKS) return;
+
+        int lead = track.candidateLead;
+        int duration = Math.max(MIN_RING_TICKS,
+                Math.min(MAX_PREDICT_LEAD + SAFETY_TICKS, lead + SAFETY_TICKS));
 
         HitIndicatorNetwork.sendWindup(player, mob.getId(), duration, 0, 0);
         ACTIVE.put(mob.getId(), new Prediction(
-                mob.getUUID(), player.getUUID(), typeKey, now, now + duration, estimate.leadTicks));
+                mob.getUUID(), player.getUUID(), typeKey, now, now + duration, lead));
         track.cooldownUntil = now + duration + 4;
+        track.candidateLead = -1;
+        track.candidateStreak = 0;
 
         LOGGER.info("[HI-LEARN] PREDICT type={} id={} lead={} duration={} confidence={} neighbors={} distance={}",
-                typeKey, mob.getId(), estimate.leadTicks, duration,
+                typeKey, mob.getId(), lead, duration,
                 String.format(java.util.Locale.ROOT, "%.3f", 1.0D / (1.0D + estimate.avgDistance)),
                 estimate.neighbors,
                 String.format(java.util.Locale.ROOT, "%.3f", estimate.avgDistance));
     }
 
-    /**
-     * Called from AttackInterceptor for every eligible direct melee damage attempt.
-     * Returns remaining ticks on an already-visible learned ring, or -1 when there
-     * was no learned prediction and the normal windup should be created.
-     */
     public static void prepareIncoming(LivingEntity attacker, ServerPlayer victim) {
         preparedRemaining = -1;
         if (attacker.getTags().contains("hit_indicator_no_learn")) return;
@@ -146,7 +179,9 @@ public final class LearnedAttackPredictor {
     }
 
     private static int computeIncoming(LivingEntity attacker, ServerPlayer victim) {
-        long now = victim.getServer().getTickCount();
+        MinecraftServer server = victim.getServer();
+        ensureLoaded(server);
+        long now = server.getTickCount();
         String typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(attacker.getType()).toString();
 
         Track track = TRACKS.get(attacker.getId());
@@ -156,19 +191,17 @@ public final class LearnedAttackPredictor {
         } else {
             Profile p = PROFILES.computeIfAbsent(typeKey, k -> new Profile());
             p.confirmedHits++;
+            dirty = true;
             LOGGER.info("[HI-LEARN] HIT_NO_HISTORY type={} hits={}", typeKey, p.confirmedHits);
         }
 
         Prediction prediction = ACTIVE.remove(attacker.getId());
         if (prediction == null
                 || !prediction.attacker.equals(attacker.getUUID())
-                || !prediction.victim.equals(victim.getUUID())) {
-            return -1;
-        }
+                || !prediction.victim.equals(victim.getUUID())) return -1;
 
         int remaining = (int)Math.max(1L, prediction.endTick - now);
         int error = (int)(now - (prediction.startTick + prediction.estimatedLead));
-
         LOGGER.info("[HI-LEARN] PREDICTION_MATCH type={} id={} remaining={} timingError={}",
                 typeKey, attacker.getId(), remaining, error);
         return remaining;
@@ -206,38 +239,50 @@ public final class LearnedAttackPredictor {
         return p == null ? 0 : p.samples.size();
     }
 
+    public static void shutdown(MinecraftServer server) {
+        if (server != null) save(server);
+        PROFILES.clear();
+        TRACKS.clear();
+        ACTIVE.clear();
+        preparedRemaining = -1;
+        loaded = false;
+        dirty = false;
+        dataFile = null;
+        lastSaveTick = 0;
+    }
+
     public static void reset() {
         PROFILES.clear();
         TRACKS.clear();
         ACTIVE.clear();
         preparedRemaining = -1;
+        dirty = false;
     }
 
     private static void train(String typeKey, Track track, long hitTick) {
         Profile profile = PROFILES.computeIfAbsent(typeKey, k -> new Profile());
         int added = 0;
-
         for (Frame frame : track.frames) {
             int lead = (int)(hitTick - frame.tick);
             if (lead < 1 || lead > MAX_PREDICT_LEAD) continue;
             profile.samples.add(new Sample(frame, lead));
             added++;
         }
-
-        while (profile.samples.size() > MAX_SAMPLES_PER_TYPE) {
-            profile.samples.remove(0);
-        }
-
+        while (profile.samples.size() > MAX_SAMPLES_PER_TYPE) profile.samples.remove(0);
         profile.confirmedHits++;
+        dirty = true;
         LOGGER.info("[HI-LEARN] TRAIN type={} hits={} added={} samples={}",
                 typeKey, profile.confirmedHits, added, profile.samples.size());
     }
 
     private static PredictionEstimate estimate(Profile profile, Frame current) {
         List<Neighbor> neighbors = new ArrayList<>(profile.samples.size());
-        for (Sample sample : profile.samples) {
+        int size = profile.samples.size();
+        for (int i = 0; i < size; i++) {
+            Sample sample = profile.samples.get(i);
             double d = featureDistance(current, sample.frame);
-            neighbors.add(new Neighbor(d, sample.leadTicks));
+            double recency = 0.35D + 0.65D * ((i + 1.0D) / size);
+            neighbors.add(new Neighbor(d, sample.leadTicks, recency));
         }
         neighbors.sort(Comparator.comparingDouble(n -> n.distance));
 
@@ -247,15 +292,13 @@ public final class LearnedAttackPredictor {
         double weightedLead = 0.0D;
         double totalWeight = 0.0D;
         double avgDistance = 0.0D;
-
         for (int i = 0; i < count; i++) {
             Neighbor n = neighbors.get(i);
-            double weight = 1.0D / (0.08D + n.distance);
+            double weight = n.recency / (0.08D + n.distance);
             weightedLead += n.leadTicks * weight;
             totalWeight += weight;
             avgDistance += n.distance;
         }
-
         int lead = (int)Math.round(weightedLead / totalWeight);
         return new PredictionEstimate(lead, avgDistance / count, count);
     }
@@ -264,16 +307,99 @@ public final class LearnedAttackPredictor {
         double dd = (a.distance - b.distance) / 2.5D;
         double dc = (a.closingSpeed - b.closingSpeed) / 0.20D;
         double df = (a.facingDot - b.facingDot) / 0.40D;
-
         int ah = Math.min(a.sinceLastHit, 80);
         int bh = Math.min(b.sinceLastHit, 80);
         double dh = (ah - bh) / 18.0D;
-
         double d = dd * dd + 0.45D * dc * dc + 0.55D * df * df + 0.70D * dh * dh;
         if (a.lineOfSight != b.lineOfSight) d += 0.80D;
         if (a.aggressive != b.aggressive) d += 0.30D;
         if (a.swinging != b.swinging) d += 0.25D;
         return Math.sqrt(d);
+    }
+
+    private static void ensureLoaded(MinecraftServer server) {
+        if (loaded) return;
+        loaded = true;
+        dataFile = server.getWorldPath(LevelResource.ROOT).resolve("hit_indicator_learned_attacks.json");
+        if (!Files.isRegularFile(dataFile)) {
+            LOGGER.info("[HI-LEARN] LOAD none path={}", dataFile);
+            return;
+        }
+        try {
+            JsonObject root = JsonParser.parseString(Files.readString(dataFile, StandardCharsets.UTF_8)).getAsJsonObject();
+            JsonObject profiles = root.getAsJsonObject("profiles");
+            if (profiles != null) {
+                for (Map.Entry<String, JsonElement> entry : profiles.entrySet()) {
+                    JsonObject po = entry.getValue().getAsJsonObject();
+                    Profile p = new Profile();
+                    p.confirmedHits = po.has("confirmedHits") ? po.get("confirmedHits").getAsInt() : 0;
+                    JsonArray samples = po.getAsJsonArray("samples");
+                    if (samples != null) {
+                        for (JsonElement el : samples) {
+                            JsonObject s = el.getAsJsonObject();
+                            Frame frame = new Frame(0L,
+                                    s.get("distance").getAsDouble(),
+                                    s.get("closing").getAsDouble(),
+                                    s.get("facing").getAsDouble(),
+                                    s.get("los").getAsBoolean(),
+                                    s.get("aggressive").getAsBoolean(),
+                                    s.get("swinging").getAsBoolean(),
+                                    s.get("sinceHit").getAsInt());
+                            p.samples.add(new Sample(frame, s.get("lead").getAsInt()));
+                        }
+                    }
+                    while (p.samples.size() > MAX_SAMPLES_PER_TYPE) p.samples.remove(0);
+                    PROFILES.put(entry.getKey(), p);
+                }
+            }
+            LOGGER.info("[HI-LEARN] LOAD profiles={} path={}", PROFILES.size(), dataFile);
+        } catch (Throwable t) {
+            LOGGER.warn("[HI-LEARN] LOAD_FAILED path={}", dataFile, t);
+        }
+    }
+
+    private static void save(MinecraftServer server) {
+        ensureLoaded(server);
+        if (dataFile == null) return;
+        try {
+            JsonObject root = new JsonObject();
+            root.addProperty("version", 1);
+            JsonObject profiles = new JsonObject();
+            for (Map.Entry<String, Profile> entry : PROFILES.entrySet()) {
+                JsonObject po = new JsonObject();
+                po.addProperty("confirmedHits", entry.getValue().confirmedHits);
+                JsonArray samples = new JsonArray();
+                for (Sample sample : entry.getValue().samples) {
+                    JsonObject s = new JsonObject();
+                    s.addProperty("distance", sample.frame.distance);
+                    s.addProperty("closing", sample.frame.closingSpeed);
+                    s.addProperty("facing", sample.frame.facingDot);
+                    s.addProperty("los", sample.frame.lineOfSight);
+                    s.addProperty("aggressive", sample.frame.aggressive);
+                    s.addProperty("swinging", sample.frame.swinging);
+                    s.addProperty("sinceHit", sample.frame.sinceLastHit);
+                    s.addProperty("lead", sample.leadTicks);
+                    samples.add(s);
+                }
+                po.add("samples", samples);
+                profiles.add(entry.getKey(), po);
+            }
+            root.add("profiles", profiles);
+
+            Files.createDirectories(dataFile.getParent());
+            Path tmp = dataFile.resolveSibling(dataFile.getFileName().toString() + ".tmp");
+            Files.writeString(tmp, GSON.toJson(root), StandardCharsets.UTF_8);
+            try {
+                Files.move(tmp, dataFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (Exception ignored) {
+                Files.move(tmp, dataFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+            dirty = false;
+            lastSaveTick = server.getTickCount();
+            LOGGER.info("[HI-LEARN] SAVE profiles={} path={}", PROFILES.size(), dataFile);
+        } catch (Throwable t) {
+            LOGGER.warn("[HI-LEARN] SAVE_FAILED path={}", dataFile, t);
+        }
     }
 
     private static final class Profile {
@@ -290,6 +416,8 @@ public final class LearnedAttackPredictor {
         long lastHitTick = -1L;
         long lastSeenTick;
         long cooldownUntil;
+        int candidateLead = -1;
+        int candidateStreak;
 
         Track(UUID uuid, String typeKey) {
             this.uuid = uuid;
@@ -299,11 +427,9 @@ public final class LearnedAttackPredictor {
 
     private record Frame(long tick, double distance, double closingSpeed, double facingDot,
                          boolean lineOfSight, boolean aggressive, boolean swinging, int sinceLastHit) {}
-
     private record Sample(Frame frame, int leadTicks) {}
-    private record Neighbor(double distance, int leadTicks) {}
+    private record Neighbor(double distance, int leadTicks, double recency) {}
     private record PredictionEstimate(int leadTicks, double avgDistance, int neighbors) {}
-
     private record Prediction(UUID attacker, UUID victim, String typeKey,
                               long startTick, long endTick, int estimatedLead) {}
 }
