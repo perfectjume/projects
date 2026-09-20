@@ -490,6 +490,7 @@ public final class RuntimeTestMod {
         if (t > 90 && learnedFourthHealthBefore > 0.0F
                 && !AttackInterceptor.isWindingUp(z)
                 && player.getHealth() < learnedFourthHealthBefore) {
+            LearnedAttackPredictor.flush(player.getServer());
             pass(now, "LEARNED_RING_ACTIVE_AT_HIT_DAMAGE_HELD_THEN_DELIVERED");
         }
     }
