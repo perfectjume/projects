@@ -28,6 +28,8 @@ with zipfile.ZipFile(base, "r") as zin:
                 zout.writestr(info, mix_bytes)
             elif info.filename == "com/misanthropy/hit_indicator/server/AttackInterceptor.class":
                 zout.writestr(info, attack.read_bytes())
+            elif info.filename == "com/misanthropy/hit_indicator/mixin/client/LivingEntityFreezeMixin.class":
+                continue
             elif info.filename.startswith("com/misanthropy/hit_indicator/server/LearnedAttackPredictor"):
                 continue
             else:
