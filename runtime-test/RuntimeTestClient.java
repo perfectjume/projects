@@ -68,7 +68,9 @@ public final class RuntimeTestClient {
             }
 
             Entity entity = mc.level.getEntity(id);
-            if (entity instanceof LivingEntity living && WindupTracker.shouldFreeze(living)) {
+            if (entity instanceof LivingEntity living) {
+                aimAt(mc, living);
+                if (WindupTracker.shouldFreeze(living)) {
                 if ("FREEZE".equals(scenario) && !directFreezeProbeLogged) {
                     int before = living.tickCount;
                     living.tick();
@@ -95,6 +97,7 @@ public final class RuntimeTestClient {
                     sameTickCount.put(id, 0);
                 }
                 lastTickCount.put(id, living.tickCount);
+                }
             }
         }
 
@@ -133,6 +136,18 @@ public final class RuntimeTestClient {
             LOGGER.info("[HI-MATRIX] CLIENT_CAMERA_SHAKE_APPLIED roll={} pitch={} yaw={}",
                     event.getRoll(), event.getPitch(), event.getYaw());
         }
+    }
+
+    private static void aimAt(Minecraft mc, LivingEntity target) {
+        if (mc.player == null) return;
+        double dx = target.getX() - mc.player.getX();
+        double dy = target.getEyeY() - mc.player.getEyeY();
+        double dz = target.getZ() - mc.player.getZ();
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        float yaw = (float)(Math.toDegrees(Math.atan2(dz, dx)) - 90.0D);
+        float pitch = (float)(-Math.toDegrees(Math.atan2(dy, horizontal)));
+        mc.player.setYRot(yaw);
+        mc.player.setXRot(pitch);
     }
 
     private static int cameraTicksLeft() {
