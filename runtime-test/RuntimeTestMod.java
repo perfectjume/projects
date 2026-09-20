@@ -72,6 +72,7 @@ public final class RuntimeTestMod {
     private static boolean done;
     private static int learnedAttackCount;
     private static boolean learnedPredictedBeforeFourth;
+    private static float learnedFourthHealthBefore = -1.0F;
     private static volatile String currentScenario = "WAITING";
 
     public RuntimeTestMod(IEventBus modBus, ModContainer container) {
@@ -124,6 +125,7 @@ public final class RuntimeTestMod {
         currentScenario = "WAITING";
         learnedAttackCount = 0;
         learnedPredictedBeforeFourth = false;
+        learnedFourthHealthBefore = -1.0F;
         AttackInterceptor.setDodgeCheck(p -> false);
         configureBase();
         LOGGER.info("[HI-MATRIX] PLAYER_LOGGED_IN tick={} health={}", loginTick, sp.getHealth());
@@ -447,24 +449,43 @@ public final class RuntimeTestMod {
             learnedPredictedBeforeFourth = true;
         }
 
-        if (t == 90) {
-            LOGGER.info("[HI-MATRIX] LEARNED_BEFORE_FOURTH predicted={} confirmed={} samples={}",
-                    learnedPredictedBeforeFourth,
-                    LearnedAttackPredictor.confirmedHits(z),
-                    LearnedAttackPredictor.sampleCount(z));
-            if (!learnedPredictedBeforeFourth) {
-                fail("learned predictor did not arm before fourth attack");
-                return;
-            }
-            float before = player.getHealth();
-            boolean result = z.doHurtTarget(player);
-            LOGGER.info("[HI-MATRIX] LEARNED_FOURTH_TRIGGER result={} pending={} ticksLeft={} healthBefore={} healthNow={}",
-                    result, AttackInterceptor.isWindingUp(z), AttackInterceptor.getWindupTicksLeft(z),
-                    before, player.getHealth());
+        if (t == 89) {
+            player.setHealth(player.getMaxHealth());
         }
 
-        if (t > 90 && player.getHealth() < startHealth) {
-            pass(now, "LEARNED_PREDICTOR_STARTED_RING_AND_DELAYED_DAMAGE");
+        if (t == 90) {
+            boolean activeNow = LearnedAttackPredictor.isPredictionActive(z);
+            LOGGER.info("[HI-MATRIX] LEARNED_BEFORE_FOURTH predictedEver={} activeNow={} confirmed={} samples={}",
+                    learnedPredictedBeforeFourth, activeNow,
+                    LearnedAttackPredictor.confirmedHits(z),
+                    LearnedAttackPredictor.sampleCount(z));
+            if (!learnedPredictedBeforeFourth || !activeNow) {
+                fail("learned predictor was not active at fourth attack");
+                return;
+            }
+
+            float before = player.getHealth();
+            learnedFourthHealthBefore = before;
+            boolean result = z.doHurtTarget(player);
+            boolean pendingNow = AttackInterceptor.isWindingUp(z);
+            int ticksLeft = AttackInterceptor.getWindupTicksLeft(z);
+            LOGGER.info("[HI-MATRIX] LEARNED_FOURTH_TRIGGER result={} pending={} ticksLeft={} healthBefore={} healthNow={}",
+                    result, pendingNow, ticksLeft, before, player.getHealth());
+
+            if (!pendingNow || ticksLeft <= 1) {
+                fail("fourth hit did not reuse predicted ring; ticksLeft=" + ticksLeft);
+                return;
+            }
+            if (player.getHealth() != before) {
+                fail("fourth damage applied before predicted ring closed");
+                return;
+            }
+        }
+
+        if (t > 90 && learnedFourthHealthBefore > 0.0F
+                && !AttackInterceptor.isWindingUp(z)
+                && player.getHealth() < learnedFourthHealthBefore) {
+            pass(now, "LEARNED_RING_ACTIVE_AT_HIT_DAMAGE_HELD_THEN_DELIVERED");
         }
     }
 
