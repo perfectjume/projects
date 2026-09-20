@@ -24,6 +24,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.storage.LevelResource;
@@ -52,6 +53,7 @@ public final class LearnedAttackPredictor {
     private static final Map<String, Profile> PROFILES = new HashMap<>();
     private static final Map<Integer, Track> TRACKS = new HashMap<>();
     private static final Map<Integer, Prediction> ACTIVE = new HashMap<>();
+    private static final Map<UUID, DirectReplay> DIRECT_REPLAYS = new HashMap<>();
 
     private static int preparedRemaining = -1;
     private static boolean loaded;
@@ -64,6 +66,8 @@ public final class LearnedAttackPredictor {
     public static void tick(MinecraftServer server) {
         ensureLoaded(server);
         long now = server.getTickCount();
+
+        DIRECT_REPLAYS.entrySet().removeIf(e -> now > e.getValue().expiresTick);
 
         ACTIVE.entrySet().removeIf(e -> {
             Prediction p = e.getValue();
@@ -219,9 +223,25 @@ public final class LearnedAttackPredictor {
 
         int remaining = (int)Math.max(1L, prediction.endTick - now);
         int error = (int)(now - (prediction.startTick + prediction.estimatedLead));
+        DIRECT_REPLAYS.put(attacker.getUUID(),
+                new DirectReplay(victim.getUUID(), now + remaining + 4L));
         LOGGER.info("[HI-LEARN] PREDICTION_MATCH type={} id={} remaining={} timingError={}",
                 typeKey, attacker.getId(), remaining, error);
         return remaining;
+    }
+
+    public static boolean deliverMobOrCaptured(Mob mob, ServerPlayer victim,
+                                                DamageSource source, float amount) {
+        DirectReplay replay = DIRECT_REPLAYS.remove(mob.getUUID());
+        long now = victim.getServer().getTickCount();
+        if (replay != null && replay.victim.equals(victim.getUUID()) && now <= replay.expiresTick) {
+            boolean result = victim.hurt(source, amount);
+            LOGGER.info("[HI-LEARN] DIRECT_REPLAY type={} id={} amount={} result={}",
+                    BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()),
+                    mob.getId(), amount, result);
+            return result;
+        }
+        return mob.doHurtTarget(victim);
     }
 
     public static int adjustDuration(int configuredTicks) {
@@ -261,6 +281,7 @@ public final class LearnedAttackPredictor {
         PROFILES.clear();
         TRACKS.clear();
         ACTIVE.clear();
+        DIRECT_REPLAYS.clear();
         preparedRemaining = -1;
         loaded = false;
         dirty = false;
@@ -272,6 +293,7 @@ public final class LearnedAttackPredictor {
         PROFILES.clear();
         TRACKS.clear();
         ACTIVE.clear();
+        DIRECT_REPLAYS.clear();
         preparedRemaining = -1;
         dirty = false;
     }
@@ -481,4 +503,5 @@ public final class LearnedAttackPredictor {
     private record PredictionEstimate(int leadTicks, double avgDistance, int neighbors) {}
     private record Prediction(UUID attacker, UUID victim, String typeKey,
                               long startTick, long endTick, int estimatedLead) {}
+    private record DirectReplay(UUID victim, long expiresTick) {}
 }
