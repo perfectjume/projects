@@ -6,6 +6,7 @@ on:
       - hit-indicator-runtime-test
       - hit-indicator-v8-runtime-test
       - hit-indicator-v10-runtime-test
+      - hit-indicator-v11-runtime-test
     paths:
       - '.github/workflows/hit-indicator-runtime-test.yml'
       - 'runtime-test/**'
@@ -136,7 +137,7 @@ jobs:
             --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
             --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
             -d /tmp/v10-patcher-classes \
-            ../runtime-test/PatchRendererV8.java ../runtime-test/PatchRendererV10Safe.java
+            ../runtime-test/PatchRendererV8.java ../runtime-test/PatchRendererV10Safe.java ../runtime-test/PatchRendererV11.java
 
           java \
             --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
@@ -152,21 +153,32 @@ jobs:
             PatchRendererV10Safe \
             /tmp/v10-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class
 
+          java \
+            --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
+            --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
+            -cp /tmp/v10-patcher-classes \
+            PatchRendererV11 \
+            /tmp/v10-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class
+
           python ../runtime-test/PackageV10.py \
             /tmp/hit_indicator-1.21.1-neoforge-v6.jar \
             /tmp/v10-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class \
-            /tmp/hit_indicator-1.21.1-neoforge-v10.jar
+            /tmp/hit_indicator-1.21.1-neoforge-v11.jar
 
-          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v10.jar
-          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v10.jar -c -p \
-            com.misanthropy.hit_indicator.client.WindupIndicatorRenderer > /tmp/renderer-v10.javap
-          grep -q 'timingFrame' /tmp/renderer-v10.javap
-          test "$(unzip -Z1 /tmp/hit_indicator-1.21.1-neoforge-v10.jar 'assets/hit_indicator/textures/indicator/timing/frame_*.png' | wc -l)" -eq 32
+          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v11.jar
+          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v11.jar -c -p \
+            com.misanthropy.hit_indicator.client.WindupIndicatorRenderer > /tmp/renderer-v11.javap
+          grep -q 'timingFrame' /tmp/renderer-v11.javap
+          grep -q 'float 2.5415f' /tmp/renderer-v11.javap
+          grep -q 'float 1.05f' /tmp/renderer-v11.javap
+          grep -q 'float 3.0f' /tmp/renderer-v11.javap
+          grep -q 'float 0.5f' /tmp/renderer-v11.javap
+          test "$(unzip -Z1 /tmp/hit_indicator-1.21.1-neoforge-v11.jar 'assets/hit_indicator/textures/indicator/timing/frame_*.png' | wc -l)" -eq 32
 
-          python ../runtime-test/VerifyV10.py /tmp/hit_indicator-1.21.1-neoforge-v10.jar
+          python ../runtime-test/VerifyV10.py /tmp/hit_indicator-1.21.1-neoforge-v11.jar
 
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
-          cp /tmp/hit_indicator-1.21.1-neoforge-v10.jar run/mods/
+          cp /tmp/hit_indicator-1.21.1-neoforge-v11.jar run/mods/
 
       - name: Generate real Minecraft world
         shell: bash
@@ -357,8 +369,8 @@ jobs:
             mdk/run/crash-reports/
             /tmp/hit_indicator-1.21.1-neoforge-v5.jar
             /tmp/hit_indicator-1.21.1-neoforge-v6.jar
-            /tmp/hit_indicator-1.21.1-neoforge-v10.jar
-            /tmp/renderer-v10.javap
+            /tmp/hit_indicator-1.21.1-neoforge-v11.jar
+            /tmp/renderer-v11.javap
             /tmp/windup-v4.javap
             /tmp/attack-v5.javap
             /tmp/attack-v6.javap
