@@ -99,9 +99,14 @@ public class PatchAttackPredictorV14 implements Opcodes {
                 "(Lnet/minecraft/server/MinecraftServer;)V", false));
         serverTick.instructions.insert(tickAdd);
 
-        // Clear learned runtime state when the server stops.
+        // Persist learned profiles, then clear runtime state when the server stops.
         InsnList stopAdd = new InsnList();
-        stopAdd.add(new MethodInsnNode(INVOKESTATIC, PRED, "reset", "()V", false));
+        stopAdd.add(new VarInsnNode(ALOAD, 0));
+        stopAdd.add(new MethodInsnNode(INVOKEVIRTUAL,
+                "net/neoforged/neoforge/event/server/ServerStoppedEvent",
+                "getServer", "()Lnet/minecraft/server/MinecraftServer;", false));
+        stopAdd.add(new MethodInsnNode(INVOKESTATIC, PRED, "shutdown",
+                "(Lnet/minecraft/server/MinecraftServer;)V", false));
         stopped.instructions.insert(stopAdd);
 
         if (!incomingHook || !durationHook || !sendHook)
