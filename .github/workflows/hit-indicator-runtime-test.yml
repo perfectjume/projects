@@ -379,8 +379,8 @@ jobs:
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=SLAM kind=SLAM' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=SURE kind=SURE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=RANGED kind=RANGED' client-latest.log
-          grep -q '\[HI-MATRIX\] CLIENT_MIXIN_DIRECT_PROBE .* canceled=false' client-latest.log
           ! grep -q '\[HI-MATRIX\] CLIENT_MIXIN_FREEZE_CONFIRMED' client-latest.log
+          ! grep -q 'LivingEntityFreezeMixin' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_CANCEL_CLEARED' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_END scenario=DODGE .* reason=1' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_END scenario=WHIFF .* reason=2' client-latest.log
