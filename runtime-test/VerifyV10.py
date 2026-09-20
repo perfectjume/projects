@@ -15,7 +15,7 @@ with zipfile.ZipFile(jar) as z:
         assert im.size == (128, 128)
         assert sum(1 for p in im.getdata() if p[3]) > 0
 
-    for n in ['icon.png', 'lunge.png', 'slam.png', 'sure.png']:
+    for n in ['icon.png', 'lunge.png', 'slam.png', 'sure.png', 'shadow.png']:
         im = Image.open(io.BytesIO(z.read('assets/hit_indicator/textures/indicator/' + n))).convert('RGBA')
         assert im.size == (16, 16)
         assert all(p[3] == 0 for p in im.getdata())
