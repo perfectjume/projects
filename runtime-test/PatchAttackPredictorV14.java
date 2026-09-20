@@ -13,13 +13,14 @@ public class PatchAttackPredictorV14 implements Opcodes {
         ClassNode cn = new ClassNode();
         new ClassReader(Files.readAllBytes(p)).accept(cn, 0);
 
-        MethodNode incoming = null, serverTick = null, stopped = null;
+        MethodNode incoming = null, serverTick = null, stopped = null, deliver = null;
         for (MethodNode m : cn.methods) {
             if (m.name.equals("onLivingAttack")) incoming = m;
             else if (m.name.equals("onServerTick")) serverTick = m;
             else if (m.name.equals("onServerStopped")) stopped = m;
+            else if (m.name.equals("deliverTo")) deliver = m;
         }
-        if (incoming == null || serverTick == null || stopped == null)
+        if (incoming == null || serverTick == null || stopped == null || deliver == null)
             throw new IllegalStateException("required methods not found");
 
         // Insert LearnedAttackPredictor.onIncoming(attacker, victim) before the
@@ -89,6 +90,30 @@ public class PatchAttackPredictorV14 implements Opcodes {
             }
         }
 
+        // Matched predicted hits must replay the captured original damage rather
+        // than asking the mob to attack a second time a few ticks later.
+        boolean directReplayHook = false;
+        for (AbstractInsnNode n = deliver.instructions.getFirst(); n != null; n = n.getNext()) {
+            if (n instanceof MethodInsnNode mi
+                    && mi.getOpcode() == INVOKEVIRTUAL
+                    && mi.owner.equals("net/minecraft/world/entity/Mob")
+                    && mi.name.equals("doHurtTarget")
+                    && mi.desc.equals("(Lnet/minecraft/world/entity/Entity;)Z")) {
+                InsnList add = new InsnList();
+                add.add(new VarInsnNode(ALOAD, 2)); // captured DamageSource
+                add.add(new VarInsnNode(FLOAD, 3)); // captured amount
+                deliver.instructions.insertBefore(n, add);
+                mi.setOpcode(INVOKESTATIC);
+                mi.owner = PRED;
+                mi.name = "deliverMobOrCaptured";
+                mi.desc = "(Lnet/minecraft/world/entity/Mob;Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/damagesource/DamageSource;F)Z";
+                mi.itf = false;
+                deliver.maxStack += 2;
+                directReplayHook = true;
+                break;
+            }
+        }
+
         // Run observation/prediction every server tick before normal pending processing.
         InsnList tickAdd = new InsnList();
         tickAdd.add(new VarInsnNode(ALOAD, 0));
@@ -109,9 +134,10 @@ public class PatchAttackPredictorV14 implements Opcodes {
                 "(Lnet/minecraft/server/MinecraftServer;)V", false));
         stopped.instructions.insert(stopAdd);
 
-        if (!incomingHook || !durationHook || !sendHook)
+        if (!incomingHook || !durationHook || !sendHook || !directReplayHook)
             throw new IllegalStateException("patch incomplete incoming=" + incomingHook +
-                    " duration=" + durationHook + " send=" + sendHook);
+                    " duration=" + durationHook + " send=" + sendHook +
+                    " directReplay=" + directReplayHook);
 
         ClassWriter cw = new ClassWriter(0);
         cn.accept(cw);
