@@ -5,6 +5,7 @@ import com.misanthropy.hit_indicator.api.HitIndicatorApi;
 import com.misanthropy.hit_indicator.api.HitIndicatorApi.HeavyKind;
 import com.misanthropy.hit_indicator.api.HitIndicatorApi.HeavyListener;
 import com.misanthropy.hit_indicator.server.AttackInterceptor;
+import com.misanthropy.hit_indicator.server.LearnedAttackPredictor;
 import com.misanthropy.hit_indicator.server.ShotInterceptor;
 import com.mojang.logging.LogUtils;
 import java.util.ArrayList;
@@ -54,7 +55,8 @@ public final class RuntimeTestMod {
         PARRY,
         WHIFF,
         RANGED,
-        CROWD
+        CROWD,
+        LEARNED
     }
 
     private static final Scenario[] ORDER = Scenario.values();
@@ -68,6 +70,8 @@ public final class RuntimeTestMod {
     private static float startHealth;
     private static boolean actionStarted;
     private static boolean done;
+    private static int learnedAttackCount;
+    private static boolean learnedPredictedBeforeFourth;
     private static volatile String currentScenario = "WAITING";
 
     public RuntimeTestMod(IEventBus modBus, ModContainer container) {
@@ -118,6 +122,8 @@ public final class RuntimeTestMod {
         actionStarted = false;
         done = false;
         currentScenario = "WAITING";
+        learnedAttackCount = 0;
+        learnedPredictedBeforeFourth = false;
         AttackInterceptor.setDodgeCheck(p -> false);
         configureBase();
         LOGGER.info("[HI-MATRIX] PLAYER_LOGGED_IN tick={} health={}", loginTick, sp.getHealth());
@@ -155,6 +161,7 @@ public final class RuntimeTestMod {
                 case WHIFF -> testWhiff(t, now);
                 case RANGED -> testRanged(t, now);
                 case CROWD -> testCrowd(t, now);
+                case LEARNED -> testLearned(t, now);
             }
             if (t > 180) fail("timeout scenario=" + s + " pending=" + pending());
         } catch (Throwable error) {
@@ -412,6 +419,55 @@ public final class RuntimeTestMod {
         pass(now, "CROWD_MAX_ONE_ENFORCED");
     }
 
+    private static void testLearned(int t, int now) {
+        if (!actionStarted && t >= 5) {
+            LearnedAttackPredictor.reset();
+            HitIndicatorConfig.WINDUP_TICKS.set(1);
+            Zombie z = learningZombie(1.5D);
+            z.setNoAi(true);
+            attacker = z;
+            actionStarted = true;
+            learnedAttackCount = 0;
+            learnedPredictedBeforeFourth = false;
+            LOGGER.info("[HI-MATRIX] LEARNED_SETUP id={}", z.getId());
+        }
+
+        if (!(attacker instanceof Zombie z)) return;
+
+        if ((t == 15 || t == 40 || t == 65) && learnedAttackCount < 3) {
+            z.doHurtTarget(player);
+            learnedAttackCount++;
+            LOGGER.info("[HI-MATRIX] LEARNED_TRAIN_HIT count={} confirmed={} samples={}",
+                    learnedAttackCount,
+                    LearnedAttackPredictor.confirmedHits(z),
+                    LearnedAttackPredictor.sampleCount(z));
+        }
+
+        if (t >= 75 && t < 90 && LearnedAttackPredictor.isPredictionActive(z)) {
+            learnedPredictedBeforeFourth = true;
+        }
+
+        if (t == 90) {
+            LOGGER.info("[HI-MATRIX] LEARNED_BEFORE_FOURTH predicted={} confirmed={} samples={}",
+                    learnedPredictedBeforeFourth,
+                    LearnedAttackPredictor.confirmedHits(z),
+                    LearnedAttackPredictor.sampleCount(z));
+            if (!learnedPredictedBeforeFourth) {
+                fail("learned predictor did not arm before fourth attack");
+                return;
+            }
+            float before = player.getHealth();
+            boolean result = z.doHurtTarget(player);
+            LOGGER.info("[HI-MATRIX] LEARNED_FOURTH_TRIGGER result={} pending={} ticksLeft={} healthBefore={} healthNow={}",
+                    result, AttackInterceptor.isWindingUp(z), AttackInterceptor.getWindupTicksLeft(z),
+                    before, player.getHealth());
+        }
+
+        if (t > 90 && player.getHealth() < startHealth) {
+            pass(now, "LEARNED_PREDICTOR_STARTED_RING_AND_DELAYED_DAMAGE");
+        }
+    }
+
     private static void forceLunge() {
         HitIndicatorConfig.HEAVY_ENABLED.set(true);
         HitIndicatorConfig.HEAVY_BASE_CHANCE.set(1.0D);
@@ -459,6 +515,19 @@ public final class RuntimeTestMod {
         ServerLevel level = player.serverLevel();
         Zombie z = EntityType.ZOMBIE.create(level);
         if (z == null) throw new IllegalStateException("zombie creation returned null");
+        z.moveTo(BX + 0.5D + distance, BY + 1.0D, BZ + 0.5D, 90.0F, 0.0F);
+        z.setPersistenceRequired();
+        z.addTag("hit_indicator_no_learn");
+        z.setTarget(player);
+        level.addFreshEntity(z);
+        spawned.add(z);
+        return z;
+    }
+
+    private static Zombie learningZombie(double distance) {
+        ServerLevel level = player.serverLevel();
+        Zombie z = EntityType.ZOMBIE.create(level);
+        if (z == null) throw new IllegalStateException("learning zombie creation returned null");
         z.moveTo(BX + 0.5D + distance, BY + 1.0D, BZ + 0.5D, 90.0F, 0.0F);
         z.setPersistenceRequired();
         z.setTarget(player);
