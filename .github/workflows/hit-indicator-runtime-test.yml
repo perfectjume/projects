@@ -8,6 +8,7 @@ on:
       - hit-indicator-v10-runtime-test
       - hit-indicator-v11-runtime-test
       - hit-indicator-v12-runtime-test
+      - hit-indicator-v13-no-freeze-runtime-test
     paths:
       - '.github/workflows/hit-indicator-runtime-test.yml'
       - 'runtime-test/**'
@@ -188,8 +189,21 @@ jobs:
 
           python ../runtime-test/VerifyV10.py /tmp/hit_indicator-1.21.1-neoforge-v12.jar
 
+          python ../runtime-test/PackageV13NoFreeze.py \
+            /tmp/hit_indicator-1.21.1-neoforge-v12.jar \
+            /tmp/hit_indicator-1.21.1-neoforge-v13.jar
+          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v13.jar
+          python - <<'PY'
+import json, zipfile
+jar='/tmp/hit_indicator-1.21.1-neoforge-v13.jar'
+with zipfile.ZipFile(jar) as z:
+    mix=json.loads(z.read('hit_indicator.mixins.json'))
+assert mix.get('client') == [], mix
+print('V13_CLIENT_FREEZE_DISABLED_PASS')
+PY
+
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
-          cp /tmp/hit_indicator-1.21.1-neoforge-v12.jar run/mods/
+          cp /tmp/hit_indicator-1.21.1-neoforge-v13.jar run/mods/
 
       - name: Generate real Minecraft world
         shell: bash
@@ -332,7 +346,8 @@ jobs:
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=SLAM kind=SLAM' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=SURE kind=SURE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=RANGED kind=RANGED' client-latest.log
-          grep -q '\[HI-MATRIX\] CLIENT_MIXIN_DIRECT_PROBE .* canceled=true' client-latest.log
+          grep -q '\[HI-MATRIX\] CLIENT_MIXIN_DIRECT_PROBE .* canceled=false' client-latest.log
+          ! grep -q '\[HI-MATRIX\] CLIENT_MIXIN_FREEZE_CONFIRMED' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_CANCEL_CLEARED' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_END scenario=DODGE .* reason=1' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_END scenario=WHIFF .* reason=2' client-latest.log
@@ -380,7 +395,7 @@ jobs:
             mdk/run/crash-reports/
             /tmp/hit_indicator-1.21.1-neoforge-v5.jar
             /tmp/hit_indicator-1.21.1-neoforge-v6.jar
-            /tmp/hit_indicator-1.21.1-neoforge-v12.jar
+            /tmp/hit_indicator-1.21.1-neoforge-v13.jar
             /tmp/renderer-v12.javap
             /tmp/windup-v4.javap
             /tmp/attack-v5.javap
