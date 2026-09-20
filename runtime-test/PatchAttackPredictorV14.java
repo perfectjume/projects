@@ -22,9 +22,6 @@ public class PatchAttackPredictorV14 implements Opcodes {
         if (incoming == null || serverTick == null || stopped == null)
             throw new IllegalStateException("required methods not found");
 
-        int predictionLocal = incoming.maxLocals;
-        incoming.maxLocals += 1;
-
         // Insert LearnedAttackPredictor.onIncoming(attacker, victim) before the
         // normal setCanceled path (the second setCanceled call in the method).
         int cancelCount = 0;
@@ -40,9 +37,8 @@ public class PatchAttackPredictorV14 implements Opcodes {
                     InsnList add = new InsnList();
                     add.add(new VarInsnNode(ALOAD, 3)); // attacker
                     add.add(new VarInsnNode(ALOAD, 1)); // victim
-                    add.add(new MethodInsnNode(INVOKESTATIC, PRED, "onIncoming",
-                            "(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/server/level/ServerPlayer;)I", false));
-                    add.add(new VarInsnNode(ISTORE, predictionLocal));
+                    add.add(new MethodInsnNode(INVOKESTATIC, PRED, "prepareIncoming",
+                            "(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/server/level/ServerPlayer;)V", false));
                     incoming.instructions.insertBefore(insertBefore, add);
                     incomingHook = true;
                     break;
@@ -66,8 +62,7 @@ public class PatchAttackPredictorV14 implements Opcodes {
                             && ti.desc.equals(OWNER + "$PendingHit")) {
                         InsnList add = new InsnList();
                         add.add(new VarInsnNode(ILOAD, 7));
-                        add.add(new VarInsnNode(ILOAD, predictionLocal));
-                        add.add(new MethodInsnNode(INVOKESTATIC, PRED, "adjustDuration", "(II)I", false));
+                        add.add(new MethodInsnNode(INVOKESTATIC, PRED, "adjustDuration", "(I)I", false));
                         add.add(new VarInsnNode(ISTORE, 7));
                         incoming.instructions.insertBefore(n, add);
                         durationHook = true;
@@ -86,10 +81,9 @@ public class PatchAttackPredictorV14 implements Opcodes {
                     && mi.owner.equals(NET)
                     && mi.name.equals("sendWindup")
                     && mi.desc.equals("(Lnet/minecraft/server/level/ServerPlayer;IIII)V")) {
-                incoming.instructions.insertBefore(n, new VarInsnNode(ILOAD, predictionLocal));
                 mi.owner = PRED;
                 mi.name = "sendWindupMaybe";
-                mi.desc = "(Lnet/minecraft/server/level/ServerPlayer;IIIII)V";
+                mi.desc = "(Lnet/minecraft/server/level/ServerPlayer;IIII)V";
                 sendHook = true;
                 break;
             }
@@ -117,7 +111,7 @@ public class PatchAttackPredictorV14 implements Opcodes {
         ClassWriter cw = new ClassWriter(0);
         cn.accept(cw);
         Files.write(p, cw.toByteArray());
-        System.out.println("PATCH_V14_PREDICTOR_OK local=" + predictionLocal);
+        System.out.println("PATCH_V14_PREDICTOR_OK");
     }
 
     private static AbstractInsnNode prevReal(AbstractInsnNode n) {
