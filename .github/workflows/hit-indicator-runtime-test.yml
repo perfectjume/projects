@@ -224,6 +224,7 @@ jobs:
           grep -q 'LearnedAttackPredictor.tick' /tmp/attack-v15.javap
           grep -q 'LearnedAttackPredictor.adjustDuration' /tmp/attack-v15.javap
           grep -q 'LearnedAttackPredictor.sendWindupMaybe' /tmp/attack-v15.javap
+          grep -q 'LearnedAttackPredictor.deliverMobOrCaptured' /tmp/attack-v15.javap
           grep -q 'LearnedAttackPredictor.shutdown' /tmp/attack-v15.javap
           grep -q 'hit_indicator_learned_attacks.json' /tmp/predictor-v15.javap
           grep -q 'PREDICT' /tmp/predictor-v15.javap
@@ -401,6 +402,7 @@ jobs:
           grep -q '\[HI-MATRIX\] LEARNED_BEFORE_FOURTH predictedEver=true activeNow=true' client-latest.log
           grep -q '\[HI-LEARN\] PREDICT' client-latest.log
           grep -q '\[HI-LEARN\] PREDICTION_MATCH' client-latest.log
+          grep -q '\[HI-LEARN\] DIRECT_REPLAY .* result=true' client-latest.log
           ! grep -q '\[HI-MATRIX\] FAIL' client-latest.log
           ! grep -q 'NoSuchFieldError' client-latest.log
           ! grep -q 'AbstractMethodError' client-latest.log
