@@ -219,7 +219,7 @@ jobs:
             com.misanthropy.hit_indicator.server.AttackInterceptor > /tmp/attack-v14.javap
           javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v14.jar -c -p \
             com.misanthropy.hit_indicator.server.LearnedAttackPredictor > /tmp/predictor-v14.javap
-          grep -q 'LearnedAttackPredictor.onIncoming' /tmp/attack-v14.javap
+          grep -q 'LearnedAttackPredictor.prepareIncoming' /tmp/attack-v14.javap
           grep -q 'LearnedAttackPredictor.tick' /tmp/attack-v14.javap
           grep -q 'LearnedAttackPredictor.adjustDuration' /tmp/attack-v14.javap
           grep -q 'LearnedAttackPredictor.sendWindupMaybe' /tmp/attack-v14.javap
