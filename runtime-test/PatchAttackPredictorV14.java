@@ -51,30 +51,24 @@ public class PatchAttackPredictorV14 implements Opcodes {
         }
 
         // At the common join after heavy/normal windup duration selection,
-        // replace durationTicks with predicted remaining ticks when >= 0.
+        // replace durationTicks through a helper call without adding control flow.
         boolean durationHook = false;
         for (AbstractInsnNode n = incoming.instructions.getFirst(); n != null; n = n.getNext()) {
             if (n instanceof FieldInsnNode fi
                     && fi.getOpcode() == GETSTATIC
                     && fi.owner.equals(OWNER)
                     && fi.name.equals("PENDING")) {
-                // First PENDING access after the duration-selection block is the put.
-                AbstractInsnNode prev = prevReal(n);
-                // We want the PENDING access whose next instructions create PendingHit,
-                // not the earlier containsKey access.
                 AbstractInsnNode next = nextReal(n);
                 if (next instanceof VarInsnNode vi && vi.getOpcode() == ILOAD && vi.var == 4) {
                     AbstractInsnNode after = nextReal(next);
                     if (after instanceof TypeInsnNode ti
                             && ti.getOpcode() == NEW
                             && ti.desc.equals(OWNER + "$PendingHit")) {
-                        LabelNode skip = new LabelNode();
                         InsnList add = new InsnList();
+                        add.add(new VarInsnNode(ILOAD, 7));
                         add.add(new VarInsnNode(ILOAD, predictionLocal));
-                        add.add(new JumpInsnNode(IFLT, skip));
-                        add.add(new VarInsnNode(ILOAD, predictionLocal));
+                        add.add(new MethodInsnNode(INVOKESTATIC, PRED, "adjustDuration", "(II)I", false));
                         add.add(new VarInsnNode(ISTORE, 7));
-                        add.add(skip);
                         incoming.instructions.insertBefore(n, add);
                         durationHook = true;
                         break;
@@ -83,7 +77,8 @@ public class PatchAttackPredictorV14 implements Opcodes {
             }
         }
 
-        // If a learned ring is already visible, do not send a second windup packet.
+        // Replace the normal packet call with a helper that suppresses it only
+        // when a learned ring is already visible.  No new branch in this method.
         boolean sendHook = false;
         for (AbstractInsnNode n = incoming.instructions.getFirst(); n != null; n = n.getNext()) {
             if (n instanceof MethodInsnNode mi
@@ -91,17 +86,10 @@ public class PatchAttackPredictorV14 implements Opcodes {
                     && mi.owner.equals(NET)
                     && mi.name.equals("sendWindup")
                     && mi.desc.equals("(Lnet/minecraft/server/level/ServerPlayer;IIII)V")) {
-                AbstractInsnNode start = n;
-                for (int i = 0; i < 5; i++) start = prevReal(start);
-                LabelNode doSend = new LabelNode();
-                LabelNode afterSend = new LabelNode();
-                InsnList before = new InsnList();
-                before.add(new VarInsnNode(ILOAD, predictionLocal));
-                before.add(new JumpInsnNode(IFLT, doSend));
-                before.add(new JumpInsnNode(GOTO, afterSend));
-                before.add(doSend);
-                incoming.instructions.insertBefore(start, before);
-                incoming.instructions.insert(n, afterSend);
+                incoming.instructions.insertBefore(n, new VarInsnNode(ILOAD, predictionLocal));
+                mi.owner = PRED;
+                mi.name = "sendWindupMaybe";
+                mi.desc = "(Lnet/minecraft/server/level/ServerPlayer;IIIII)V";
                 sendHook = true;
                 break;
             }
@@ -126,7 +114,7 @@ public class PatchAttackPredictorV14 implements Opcodes {
             throw new IllegalStateException("patch incomplete incoming=" + incomingHook +
                     " duration=" + durationHook + " send=" + sendHook);
 
-        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+        ClassWriter cw = new ClassWriter(0);
         cn.accept(cw);
         Files.write(p, cw.toByteArray());
         System.out.println("PATCH_V14_PREDICTOR_OK local=" + predictionLocal);
