@@ -139,6 +139,7 @@ public final class LearnedAttackPredictor {
      * was no learned prediction and the normal windup should be created.
      */
     public static int onIncoming(LivingEntity attacker, ServerPlayer victim) {
+        if (attacker.getTags().contains("hit_indicator_no_learn")) return -1;
         long now = victim.getServer().getTickCount();
         String typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(attacker.getType()).toString();
 
@@ -165,6 +166,17 @@ public final class LearnedAttackPredictor {
         LOGGER.info("[HI-LEARN] PREDICTION_MATCH type={} id={} remaining={} timingError={}",
                 typeKey, attacker.getId(), remaining, error);
         return remaining;
+    }
+
+    public static int adjustDuration(int configuredTicks, int predictionRemaining) {
+        return predictionRemaining >= 0 ? Math.max(1, predictionRemaining) : configuredTicks;
+    }
+
+    public static void sendWindupMaybe(ServerPlayer player, int attackerId, int durationTicks,
+                                       int kind, int moveTicks, int predictionRemaining) {
+        if (predictionRemaining < 0) {
+            HitIndicatorNetwork.sendWindup(player, attackerId, durationTicks, kind, moveTicks);
+        }
     }
 
     public static boolean isPredictionActive(LivingEntity attacker) {
