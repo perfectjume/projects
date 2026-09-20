@@ -36,6 +36,7 @@ public final class LearnedAttackPredictor {
 
     private static final int HISTORY_TICKS = 20;
     private static final int MAX_SAMPLES_PER_TYPE = 384;
+    private static final int MAX_INTERVAL_SAMPLES = 48;
     private static final int MIN_CONFIRMED_HITS = 3;
     private static final int K_NEIGHBORS = 9;
     private static final int MAX_PREDICT_LEAD = 16;
@@ -143,6 +144,17 @@ public final class LearnedAttackPredictor {
             track.candidateStreak = 0;
             track.candidateLead = -1;
             return;
+        }
+
+        double expectedInterval = expectedInterval(profile);
+        if (expectedInterval > 0.0D && frame.sinceLastHit < 999) {
+            double predictedCycle = frame.sinceLastHit + estimate.leadTicks;
+            double tolerance = Math.max(3.0D, expectedInterval * 0.18D);
+            if (Math.abs(predictedCycle - expectedInterval) > tolerance) {
+                track.candidateStreak = 0;
+                track.candidateLead = -1;
+                return;
+            }
         }
 
         if (track.candidateLead >= 0 && Math.abs(track.candidateLead - estimate.leadTicks) <= 2) {
@@ -261,6 +273,14 @@ public final class LearnedAttackPredictor {
 
     private static void train(String typeKey, Track track, long hitTick) {
         Profile profile = PROFILES.computeIfAbsent(typeKey, k -> new Profile());
+        if (track.lastHitTick >= 0L) {
+            int interval = (int)(hitTick - track.lastHitTick);
+            if (interval >= 2 && interval <= 200) {
+                profile.intervals.add(interval);
+                while (profile.intervals.size() > MAX_INTERVAL_SAMPLES) profile.intervals.remove(0);
+            }
+        }
+
         int added = 0;
         for (Frame frame : track.frames) {
             int lead = (int)(hitTick - frame.tick);
@@ -271,8 +291,22 @@ public final class LearnedAttackPredictor {
         while (profile.samples.size() > MAX_SAMPLES_PER_TYPE) profile.samples.remove(0);
         profile.confirmedHits++;
         dirty = true;
-        LOGGER.info("[HI-LEARN] TRAIN type={} hits={} added={} samples={}",
-                typeKey, profile.confirmedHits, added, profile.samples.size());
+        LOGGER.info("[HI-LEARN] TRAIN type={} hits={} added={} samples={} interval={}",
+                typeKey, profile.confirmedHits, added, profile.samples.size(),
+                String.format(java.util.Locale.ROOT, "%.2f", expectedInterval(profile)));
+    }
+
+    private static double expectedInterval(Profile profile) {
+        if (profile.intervals.size() < 2) return -1.0D;
+        double weighted = 0.0D;
+        double weights = 0.0D;
+        int size = profile.intervals.size();
+        for (int i = 0; i < size; i++) {
+            double w = 0.35D + 0.65D * ((i + 1.0D) / size);
+            weighted += profile.intervals.get(i) * w;
+            weights += w;
+        }
+        return weighted / weights;
     }
 
     private static PredictionEstimate estimate(Profile profile, Frame current) {
@@ -333,6 +367,12 @@ public final class LearnedAttackPredictor {
                     JsonObject po = entry.getValue().getAsJsonObject();
                     Profile p = new Profile();
                     p.confirmedHits = po.has("confirmedHits") ? po.get("confirmedHits").getAsInt() : 0;
+                    JsonArray intervals = po.getAsJsonArray("intervals");
+                    if (intervals != null) {
+                        for (JsonElement el : intervals) p.intervals.add(el.getAsInt());
+                    }
+                    while (p.intervals.size() > MAX_INTERVAL_SAMPLES) p.intervals.remove(0);
+
                     JsonArray samples = po.getAsJsonArray("samples");
                     if (samples != null) {
                         for (JsonElement el : samples) {
@@ -368,6 +408,9 @@ public final class LearnedAttackPredictor {
             for (Map.Entry<String, Profile> entry : PROFILES.entrySet()) {
                 JsonObject po = new JsonObject();
                 po.addProperty("confirmedHits", entry.getValue().confirmedHits);
+                JsonArray intervals = new JsonArray();
+                for (Integer interval : entry.getValue().intervals) intervals.add(interval);
+                po.add("intervals", intervals);
                 JsonArray samples = new JsonArray();
                 for (Sample sample : entry.getValue().samples) {
                     JsonObject s = new JsonObject();
@@ -404,6 +447,7 @@ public final class LearnedAttackPredictor {
 
     private static final class Profile {
         int confirmedHits;
+        final List<Integer> intervals = new ArrayList<>();
         final List<Sample> samples = new ArrayList<>();
     }
 
