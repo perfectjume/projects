@@ -228,7 +228,7 @@ jobs:
 
           STARTED=0
           for i in $(seq 1 240); do
-            if grep -q '\[HI-MATRIX\] SCENARIO_START MELEE' run/logs/latest.log 2>/dev/null; then
+            if grep -q '\[HI-MATRIX\] SCENARIO_START SURE' run/logs/latest.log 2>/dev/null; then
               STARTED=1
               break
             fi
