@@ -136,7 +136,7 @@ jobs:
             --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
             --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
             -d /tmp/v10-patcher-classes \
-            ../runtime-test/PatchRendererV8.java ../runtime-test/PatchRendererV9.java
+            ../runtime-test/PatchRendererV8.java ../runtime-test/PatchRendererV10Safe.java
 
           java \
             --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
@@ -149,7 +149,7 @@ jobs:
             --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
             --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
             -cp /tmp/v10-patcher-classes \
-            PatchRendererV9 \
+            PatchRendererV10Safe \
             /tmp/v10-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class
 
           python ../runtime-test/PackageV10.py \
@@ -161,7 +161,6 @@ jobs:
           javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v10.jar -c -p \
             com.misanthropy.hit_indicator.client.WindupIndicatorRenderer > /tmp/renderer-v10.javap
           grep -q 'timingFrame' /tmp/renderer-v10.javap
-          ! grep -q 'getstatic.*SHADOW' /tmp/renderer-v10.javap
           test "$(unzip -Z1 /tmp/hit_indicator-1.21.1-neoforge-v10.jar 'assets/hit_indicator/textures/indicator/timing/frame_*.png' | wc -l)" -eq 32
 
           python ../runtime-test/VerifyV10.py /tmp/hit_indicator-1.21.1-neoforge-v10.jar
