@@ -5,6 +5,7 @@ on:
     branches:
       - hit-indicator-runtime-test
       - hit-indicator-v8-runtime-test
+      - hit-indicator-v10-runtime-test
     paths:
       - '.github/workflows/hit-indicator-runtime-test.yml'
       - 'runtime-test/**'
@@ -123,42 +124,67 @@ jobs:
           rm -f src/main/java/com/misanthropy/hit_indicator/server/ParticleCompat.java
           rm -f build/classes/java/main/com/misanthropy/hit_indicator/server/ParticleCompat.class
 
-          # Build the exact v8 renderer/assets from the proven v6 baseline.
+          # Build v10 from the proven v6 baseline: animated timing ring, gold untinted ring,
+          # no shadow/background, and transparent center icons.
           python -m pip install --quiet pillow
-          mkdir -p /tmp/v8-renderer/com/misanthropy/hit_indicator/client /tmp/v8-patcher-classes
+          mkdir -p /tmp/v10-renderer/com/misanthropy/hit_indicator/client /tmp/v10-patcher-classes
           unzip -p /tmp/hit_indicator-1.21.1-neoforge-v6.jar \
             com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class \
-            > /tmp/v8-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class
+            > /tmp/v10-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class
+
           javac \
             --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
             --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
-            -d /tmp/v8-patcher-classes \
-            ../runtime-test/PatchRendererV8.java
+            -d /tmp/v10-patcher-classes \
+            ../runtime-test/PatchRendererV8.java ../runtime-test/PatchRendererV9.java
+
           java \
             --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
             --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
-            -cp /tmp/v8-patcher-classes \
+            -cp /tmp/v10-patcher-classes \
             PatchRendererV8 \
-            /tmp/v8-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class
-          python ../runtime-test/PackageV8.py \
+            /tmp/v10-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class
+
+          java \
+            --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
+            --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
+            -cp /tmp/v10-patcher-classes \
+            PatchRendererV9 \
+            /tmp/v10-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class
+
+          python ../runtime-test/PackageV10.py \
             /tmp/hit_indicator-1.21.1-neoforge-v6.jar \
-            /tmp/v8-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class \
-            /tmp/hit_indicator-1.21.1-neoforge-v8.jar
-          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v8.jar
-          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v8.jar -c -p \
-            com.misanthropy.hit_indicator.client.WindupIndicatorRenderer > /tmp/renderer-v8.javap
-          grep -q 'timingFrame' /tmp/renderer-v8.javap
-          echo '6ed47b1b62ece5171014daec085dbe03e2705a829a2707f3f4a46fd423333d84  /tmp/v8-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class' | sha256sum -c -
-          test "$(unzip -Z1 /tmp/hit_indicator-1.21.1-neoforge-v8.jar 'assets/hit_indicator/textures/indicator/timing/frame_*.png' | wc -l)" -eq 32
-          unzip -p /tmp/hit_indicator-1.21.1-neoforge-v8.jar assets/hit_indicator/textures/indicator/ring.png > /tmp/v8-ring.png
-          identify /tmp/v8-ring.png | grep -q '128x128'
-          for i in $(seq 0 31); do
-            unzip -p /tmp/hit_indicator-1.21.1-neoforge-v8.jar "assets/hit_indicator/textures/indicator/timing/frame_$i.png" > "/tmp/v8-frame-$i.png"
-            identify "/tmp/v8-frame-$i.png" | grep -q '128x128'
-          done
+            /tmp/v10-renderer/com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class \
+            /tmp/hit_indicator-1.21.1-neoforge-v10.jar
+
+          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v10.jar
+          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v10.jar -c -p \
+            com.misanthropy.hit_indicator.client.WindupIndicatorRenderer > /tmp/renderer-v10.javap
+          grep -q 'timingFrame' /tmp/renderer-v10.javap
+          ! grep -q 'getstatic.*SHADOW' /tmp/renderer-v10.javap
+          test "$(unzip -Z1 /tmp/hit_indicator-1.21.1-neoforge-v10.jar 'assets/hit_indicator/textures/indicator/timing/frame_*.png' | wc -l)" -eq 32
+
+          python - <<'PY'
+import io, zipfile
+from PIL import Image
+jar='/tmp/hit_indicator-1.21.1-neoforge-v10.jar'
+with zipfile.ZipFile(jar) as z:
+    ring=Image.open(io.BytesIO(z.read('assets/hit_indicator/textures/indicator/ring.png'))).convert('RGBA')
+    assert ring.size == (128,128)
+    assert sum(1 for p in ring.getdata() if p[3]) > 0
+    for i in range(32):
+        im=Image.open(io.BytesIO(z.read(f'assets/hit_indicator/textures/indicator/timing/frame_{i}.png'))).convert('RGBA')
+        assert im.size == (128,128)
+        assert sum(1 for p in im.getdata() if p[3]) > 0
+    for n in ['icon.png','lunge.png','slam.png','sure.png']:
+        im=Image.open(io.BytesIO(z.read('assets/hit_indicator/textures/indicator/'+n))).convert('RGBA')
+        assert im.size == (16,16)
+        assert all(p[3] == 0 for p in im.getdata())
+print('V10_ASSET_ASSERTIONS_PASS')
+PY
 
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
-          cp /tmp/hit_indicator-1.21.1-neoforge-v8.jar run/mods/
+          cp /tmp/hit_indicator-1.21.1-neoforge-v10.jar run/mods/
 
       - name: Generate real Minecraft world
         shell: bash
@@ -349,10 +375,8 @@ jobs:
             mdk/run/crash-reports/
             /tmp/hit_indicator-1.21.1-neoforge-v5.jar
             /tmp/hit_indicator-1.21.1-neoforge-v6.jar
-            /tmp/hit_indicator-1.21.1-neoforge-v8.jar
-            /tmp/renderer-v8.javap
-            /tmp/v8-ring.png
-            /tmp/v8-frame-*.png
+            /tmp/hit_indicator-1.21.1-neoforge-v10.jar
+            /tmp/renderer-v10.javap
             /tmp/windup-v4.javap
             /tmp/attack-v5.javap
             /tmp/attack-v6.javap
