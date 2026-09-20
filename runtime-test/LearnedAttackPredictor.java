@@ -146,22 +146,27 @@ public final class LearnedAttackPredictor {
             return;
         }
 
+        int predictedLead = estimate.leadTicks;
         double expectedInterval = expectedInterval(profile);
         if (expectedInterval > 0.0D && frame.sinceLastHit < 999) {
-            double predictedCycle = frame.sinceLastHit + estimate.leadTicks;
+            int intervalLead = (int)Math.round(expectedInterval - frame.sinceLastHit);
             double tolerance = Math.max(3.0D, expectedInterval * 0.18D);
-            if (Math.abs(predictedCycle - expectedInterval) > tolerance) {
+            if (intervalLead < 2 || intervalLead > MAX_PREDICT_LEAD
+                    || Math.abs(intervalLead - estimate.leadTicks) > tolerance) {
                 track.candidateStreak = 0;
                 track.candidateLead = -1;
                 return;
             }
+            // kNN establishes that this looks like a pre-hit state. Once the
+            // attack cadence is learned, cadence is the better countdown clock.
+            predictedLead = intervalLead;
         }
 
-        if (track.candidateLead >= 0 && Math.abs(track.candidateLead - estimate.leadTicks) <= 2) {
+        if (track.candidateLead >= 0 && Math.abs(track.candidateLead - predictedLead) <= 2) {
             track.candidateStreak++;
-            track.candidateLead = (track.candidateLead + estimate.leadTicks) / 2;
+            track.candidateLead = (track.candidateLead + predictedLead) / 2;
         } else {
-            track.candidateLead = estimate.leadTicks;
+            track.candidateLead = predictedLead;
             track.candidateStreak = 1;
         }
         if (track.candidateStreak < STABLE_PREDICTION_TICKS) return;
@@ -177,8 +182,8 @@ public final class LearnedAttackPredictor {
         track.candidateLead = -1;
         track.candidateStreak = 0;
 
-        LOGGER.info("[HI-LEARN] PREDICT type={} id={} lead={} duration={} confidence={} neighbors={} distance={}",
-                typeKey, mob.getId(), lead, duration,
+        LOGGER.info("[HI-LEARN] PREDICT type={} id={} lead={} knnLead={} duration={} confidence={} neighbors={} distance={}",
+                typeKey, mob.getId(), lead, estimate.leadTicks, duration,
                 String.format(java.util.Locale.ROOT, "%.3f", 1.0D / (1.0D + estimate.avgDistance)),
                 estimate.neighbors,
                 String.format(java.util.Locale.ROOT, "%.3f", estimate.avgDistance));
