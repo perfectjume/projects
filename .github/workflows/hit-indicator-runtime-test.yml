@@ -412,15 +412,7 @@ jobs:
           ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' client-latest.log
           ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' server-latest.log
           test -f mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json
-          python - <<'PY'
-import json
-p='mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json'
-d=json.load(open(p,'r',encoding='utf-8'))
-z=d.get('profiles',{}).get('minecraft:zombie',{})
-assert z.get('confirmedHits',0) >= 3, z
-assert len(z.get('samples',[])) >= 24, z
-print('LEARNED_PROFILE_PERSISTENCE_PASS', z.get('confirmedHits'), len(z.get('samples',[])))
-PY
+          python -c "import json; p='mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json'; d=json.load(open(p,'r',encoding='utf-8')); z=d.get('profiles',{}).get('minecraft:zombie',{}); assert z.get('confirmedHits',0)>=3,z; assert len(z.get('samples',[]))>=24,z; print('LEARNED_PROFILE_PERSISTENCE_PASS',z.get('confirmedHits'),len(z.get('samples',[])))"
           echo 'FULL_RUNTIME_MATRIX_PASS' >> runtime-summary.txt
           echo 'GROUND_PARTICLE_PARSE_PASS' >> runtime-summary.txt
 
