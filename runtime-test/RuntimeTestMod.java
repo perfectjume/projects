@@ -437,6 +437,8 @@ public final class RuntimeTestMod {
         if (!(attacker instanceof Zombie z)) return;
 
         if ((t == 15 || t == 40 || t == 65) && learnedAttackCount < 3) {
+            player.teleportTo(BX + 0.5D, BY + 1.0D, BZ + 0.5D);
+            player.setDeltaMovement(0.0D, 0.0D, 0.0D);
             z.doHurtTarget(player);
             learnedAttackCount++;
             LOGGER.info("[HI-MATRIX] LEARNED_TRAIN_HIT count={} confirmed={} samples={}",
@@ -450,7 +452,10 @@ public final class RuntimeTestMod {
         }
 
         if (t == 89) {
+            player.teleportTo(BX + 0.5D, BY + 1.0D, BZ + 0.5D);
+            player.setDeltaMovement(0.0D, 0.0D, 0.0D);
             player.setHealth(player.getMaxHealth());
+            LOGGER.info("[HI-MATRIX] LEARNED_PRE_FOURTH_DISTANCE distance={}", z.distanceTo(player));
         }
 
         if (t == 90) {
