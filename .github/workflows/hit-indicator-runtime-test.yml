@@ -10,6 +10,7 @@ on:
       - hit-indicator-v12-runtime-test
       - hit-indicator-v14-learned-predictor
       - hit-indicator-v15-persistent-learner
+      - hit-indicator-v15-java25-validation
     paths:
       - '.github/workflows/hit-indicator-runtime-test.yml'
       - 'runtime-test/**'
@@ -24,11 +25,11 @@ jobs:
       - name: Checkout test branch
         uses: actions/checkout@v4
 
-      - name: Java 21
+      - name: Java 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
 
       - name: Install virtual display
         run: |
