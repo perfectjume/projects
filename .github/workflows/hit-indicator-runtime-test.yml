@@ -8,6 +8,7 @@ on:
       - hit-indicator-v10-runtime-test
       - hit-indicator-v11-runtime-test
       - hit-indicator-v12-runtime-test
+      - hit-indicator-v14-learned-predictor
     paths:
       - '.github/workflows/hit-indicator-runtime-test.yml'
       - 'runtime-test/**'
@@ -103,6 +104,7 @@ jobs:
 
           mkdir -p src/main/java/com/misanthropy/hit_indicator/server
           cp ../runtime-test/ParticleCompat.java src/main/java/com/misanthropy/hit_indicator/server/ParticleCompat.java
+          cp ../runtime-test/LearnedAttackPredictor.java src/main/java/com/misanthropy/hit_indicator/server/LearnedAttackPredictor.java
 
           chmod +x gradlew
           ./gradlew --no-daemon compileJava
@@ -188,8 +190,47 @@ jobs:
 
           python ../runtime-test/VerifyV10.py /tmp/hit_indicator-1.21.1-neoforge-v12.jar
 
+          mkdir -p /tmp/v14-attack/com/misanthropy/hit_indicator/server /tmp/v14-patcher-classes
+          unzip -p /tmp/hit_indicator-1.21.1-neoforge-v12.jar \
+            com/misanthropy/hit_indicator/server/AttackInterceptor.class \
+            > /tmp/v14-attack/com/misanthropy/hit_indicator/server/AttackInterceptor.class
+
+          javac \
+            --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
+            --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
+            -d /tmp/v14-patcher-classes \
+            ../runtime-test/PatchAttackPredictorV14.java
+
+          java \
+            --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
+            --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
+            -cp /tmp/v14-patcher-classes \
+            PatchAttackPredictorV14 \
+            /tmp/v14-attack/com/misanthropy/hit_indicator/server/AttackInterceptor.class
+
+          python ../runtime-test/PackageV14.py \
+            /tmp/hit_indicator-1.21.1-neoforge-v12.jar \
+            /tmp/v14-attack/com/misanthropy/hit_indicator/server/AttackInterceptor.class \
+            build/classes/java/main/com/misanthropy/hit_indicator/server \
+            /tmp/hit_indicator-1.21.1-neoforge-v14.jar
+
+          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v14.jar
+          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v14.jar -c -p \
+            com.misanthropy.hit_indicator.server.AttackInterceptor > /tmp/attack-v14.javap
+          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v14.jar -c -p \
+            com.misanthropy.hit_indicator.server.LearnedAttackPredictor > /tmp/predictor-v14.javap
+          grep -q 'LearnedAttackPredictor.onIncoming' /tmp/attack-v14.javap
+          grep -q 'LearnedAttackPredictor.tick' /tmp/attack-v14.javap
+          grep -q 'LearnedAttackPredictor.adjustDuration' /tmp/attack-v14.javap
+          grep -q 'LearnedAttackPredictor.sendWindupMaybe' /tmp/attack-v14.javap
+          grep -q 'PREDICT' /tmp/predictor-v14.javap
+          python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v14.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); assert m.get('client') == [], m; print('V14_NO_FREEZE_MIXIN_PASS')"
+
+          rm -f src/main/java/com/misanthropy/hit_indicator/server/LearnedAttackPredictor.java
+          rm -f build/classes/java/main/com/misanthropy/hit_indicator/server/LearnedAttackPredictor*.class
+
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
-          cp /tmp/hit_indicator-1.21.1-neoforge-v12.jar run/mods/
+          cp /tmp/hit_indicator-1.21.1-neoforge-v14.jar run/mods/
 
       - name: Generate real Minecraft world
         shell: bash
@@ -319,7 +360,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -q '\[HI-MATRIX\] SERVER_ALL_SCENARIOS_PASS' client-latest.log
-          for scenario in MELEE CANCEL FREEZE LUNGE DODGE SLAM SURE PARRY WHIFF RANGED CROWD; do
+          for scenario in MELEE CANCEL FREEZE LUNGE DODGE SLAM SURE PARRY WHIFF RANGED CROWD LEARNED; do
             grep -q "\\[HI-MATRIX\\] SCENARIO_PASS $scenario" client-latest.log
           done
           grep -q '\[HI-MATRIX\] CLIENT_WINDUP scenario=MELEE .* kind=MELEE' client-latest.log
@@ -332,7 +373,8 @@ jobs:
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=SLAM kind=SLAM' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=SURE kind=SURE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=RANGED kind=RANGED' client-latest.log
-          grep -q '\[HI-MATRIX\] CLIENT_MIXIN_DIRECT_PROBE .* canceled=true' client-latest.log
+          grep -q '\[HI-MATRIX\] CLIENT_MIXIN_DIRECT_PROBE .* canceled=false' client-latest.log
+          ! grep -q '\[HI-MATRIX\] CLIENT_MIXIN_FREEZE_CONFIRMED' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_CANCEL_CLEARED' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_END scenario=DODGE .* reason=1' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_END scenario=WHIFF .* reason=2' client-latest.log
@@ -347,6 +389,9 @@ jobs:
           grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=LUNGE' client-latest.log
           grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=SLAM' client-latest.log
           grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=SURE_HIT' client-latest.log
+          grep -q '\[HI-MATRIX\] LEARNED_BEFORE_FOURTH predicted=true' client-latest.log
+          grep -q '\[HI-LEARN\] PREDICT' client-latest.log
+          grep -q '\[HI-LEARN\] PREDICTION_MATCH' client-latest.log
           ! grep -q '\[HI-MATRIX\] FAIL' client-latest.log
           ! grep -q 'NoSuchFieldError' client-latest.log
           ! grep -q 'AbstractMethodError' client-latest.log
@@ -380,7 +425,9 @@ jobs:
             mdk/run/crash-reports/
             /tmp/hit_indicator-1.21.1-neoforge-v5.jar
             /tmp/hit_indicator-1.21.1-neoforge-v6.jar
-            /tmp/hit_indicator-1.21.1-neoforge-v12.jar
+            /tmp/hit_indicator-1.21.1-neoforge-v14.jar
+            /tmp/attack-v14.javap
+            /tmp/predictor-v14.javap
             /tmp/renderer-v12.javap
             /tmp/windup-v4.javap
             /tmp/attack-v5.javap
