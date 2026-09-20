@@ -193,14 +193,7 @@ jobs:
             /tmp/hit_indicator-1.21.1-neoforge-v12.jar \
             /tmp/hit_indicator-1.21.1-neoforge-v13.jar
           unzip -t /tmp/hit_indicator-1.21.1-neoforge-v13.jar
-          python - <<'PY'
-import json, zipfile
-jar='/tmp/hit_indicator-1.21.1-neoforge-v13.jar'
-with zipfile.ZipFile(jar) as z:
-    mix=json.loads(z.read('hit_indicator.mixins.json'))
-assert mix.get('client') == [], mix
-print('V13_CLIENT_FREEZE_DISABLED_PASS')
-PY
+          python ../runtime-test/VerifyV13.py /tmp/hit_indicator-1.21.1-neoforge-v13.jar
 
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
           cp /tmp/hit_indicator-1.21.1-neoforge-v13.jar run/mods/
