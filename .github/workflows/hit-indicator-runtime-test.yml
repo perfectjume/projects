@@ -9,6 +9,7 @@ on:
       - hit-indicator-v11-runtime-test
       - hit-indicator-v12-runtime-test
       - hit-indicator-v14-learned-predictor
+      - hit-indicator-v15-persistent-learner
     paths:
       - '.github/workflows/hit-indicator-runtime-test.yml'
       - 'runtime-test/**'
@@ -80,13 +81,13 @@ jobs:
           grep -q 'ServerPlayer.connection:Lnet/minecraft/server/network/ServerGamePacketListenerImpl;' /tmp/attack-v5.javap
           ! grep -q 'ServerPlayer.connection:Lnet/minecraft/server/level/ServerGamePacketListenerImpl;' /tmp/attack-v5.javap
 
-      - name: Prepare exact NeoForge 21.1.249 MDK
+      - name: Prepare exact NeoForge 21.1.250 MDK
         shell: bash
         run: |
           set -euo pipefail
           git clone --depth 1 https://github.com/NeoForgeMDKs/MDK-1.21.1-ModDevGradle.git mdk
           cd mdk
-          sed -i 's/^neo_version=.*/neo_version=21.1.249/' gradle.properties
+          sed -i 's/^neo_version=.*/neo_version=21.1.250/' gradle.properties
           sed -i 's/^mod_id=.*/mod_id=hitindicatortest/' gradle.properties
           sed -i 's/^mod_name=.*/mod_name=Hit Indicator Runtime Test/' gradle.properties
           sed -i 's/^mod_version=.*/mod_version=1.0.0/' gradle.properties
@@ -212,19 +213,21 @@ jobs:
             /tmp/hit_indicator-1.21.1-neoforge-v12.jar \
             /tmp/v14-attack/com/misanthropy/hit_indicator/server/AttackInterceptor.class \
             build/classes/java/main/com/misanthropy/hit_indicator/server \
-            /tmp/hit_indicator-1.21.1-neoforge-v14.jar
+            /tmp/hit_indicator-1.21.1-neoforge-v15.jar
 
-          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v14.jar
-          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v14.jar -c -p \
-            com.misanthropy.hit_indicator.server.AttackInterceptor > /tmp/attack-v14.javap
-          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v14.jar -c -p \
-            com.misanthropy.hit_indicator.server.LearnedAttackPredictor > /tmp/predictor-v14.javap
-          grep -q 'LearnedAttackPredictor.prepareIncoming' /tmp/attack-v14.javap
-          grep -q 'LearnedAttackPredictor.tick' /tmp/attack-v14.javap
-          grep -q 'LearnedAttackPredictor.adjustDuration' /tmp/attack-v14.javap
-          grep -q 'LearnedAttackPredictor.sendWindupMaybe' /tmp/attack-v14.javap
-          grep -q 'PREDICT' /tmp/predictor-v14.javap
-          python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v14.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); assert m.get('client') == [], m; print('V14_NO_FREEZE_MIXIN_PASS')"
+          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v15.jar
+          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v15.jar -c -p \
+            com.misanthropy.hit_indicator.server.AttackInterceptor > /tmp/attack-v15.javap
+          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v15.jar -c -p \
+            com.misanthropy.hit_indicator.server.LearnedAttackPredictor > /tmp/predictor-v15.javap
+          grep -q 'LearnedAttackPredictor.prepareIncoming' /tmp/attack-v15.javap
+          grep -q 'LearnedAttackPredictor.tick' /tmp/attack-v15.javap
+          grep -q 'LearnedAttackPredictor.adjustDuration' /tmp/attack-v15.javap
+          grep -q 'LearnedAttackPredictor.sendWindupMaybe' /tmp/attack-v15.javap
+          grep -q 'LearnedAttackPredictor.shutdown' /tmp/attack-v15.javap
+          grep -q 'hit_indicator_learned_attacks.json' /tmp/predictor-v15.javap
+          grep -q 'PREDICT' /tmp/predictor-v15.javap
+          python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v15.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); assert m.get('client') == [], m; print('V15_NO_FREEZE_MIXIN_PASS')"
 
           rm -f src/main/java/com/misanthropy/hit_indicator/server/LearnedAttackPredictor.java
           rm -f build/classes/java/main/com/misanthropy/hit_indicator/server/LearnedAttackPredictor*.class
@@ -232,11 +235,11 @@ jobs:
           # Subsequent Gradle run tasks may recompile RuntimeTestMod. Point its
           # compileOnly dependency at the final v14 jar so LearnedAttackPredictor
           # resolves without creating a split runtime package.
-          cp /tmp/hit_indicator-1.21.1-neoforge-v14.jar libs/
-          sed -i 's/hit_indicator-1.21.1-neoforge-v5.jar/hit_indicator-1.21.1-neoforge-v14.jar/g' build.gradle
+          cp /tmp/hit_indicator-1.21.1-neoforge-v15.jar libs/
+          sed -i 's/hit_indicator-1.21.1-neoforge-v5.jar/hit_indicator-1.21.1-neoforge-v15.jar/g' build.gradle
 
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
-          cp /tmp/hit_indicator-1.21.1-neoforge-v14.jar run/mods/
+          cp /tmp/hit_indicator-1.21.1-neoforge-v15.jar run/mods/
 
       - name: Generate real Minecraft world
         shell: bash
@@ -408,6 +411,16 @@ jobs:
           ! grep -Eq 'NoSuchMethodError|NoClassDefFoundError|ClassNotFoundException|IncompatibleClassChangeError|VerifyError' server-latest.log
           ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' client-latest.log
           ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' server-latest.log
+          test -f mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json
+          python - <<'PY'
+import json
+p='mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json'
+d=json.load(open(p,'r',encoding='utf-8'))
+z=d.get('profiles',{}).get('minecraft:zombie',{})
+assert z.get('confirmedHits',0) >= 3, z
+assert len(z.get('samples',[])) >= 24, z
+print('LEARNED_PROFILE_PERSISTENCE_PASS', z.get('confirmedHits'), len(z.get('samples',[])))
+PY
           echo 'FULL_RUNTIME_MATRIX_PASS' >> runtime-summary.txt
           echo 'GROUND_PARTICLE_PARSE_PASS' >> runtime-summary.txt
 
@@ -431,9 +444,9 @@ jobs:
             mdk/run/crash-reports/
             /tmp/hit_indicator-1.21.1-neoforge-v5.jar
             /tmp/hit_indicator-1.21.1-neoforge-v6.jar
-            /tmp/hit_indicator-1.21.1-neoforge-v14.jar
-            /tmp/attack-v14.javap
-            /tmp/predictor-v14.javap
+            /tmp/hit_indicator-1.21.1-neoforge-v15.jar
+            /tmp/attack-v15.javap
+            /tmp/predictor-v15.javap
             /tmp/renderer-v12.javap
             /tmp/windup-v4.javap
             /tmp/attack-v5.javap
