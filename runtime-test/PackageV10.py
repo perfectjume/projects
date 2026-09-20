@@ -52,6 +52,7 @@ icon_paths = {
     'assets/hit_indicator/textures/indicator/lunge.png',
     'assets/hit_indicator/textures/indicator/slam.png',
     'assets/hit_indicator/textures/indicator/sure.png',
+    'assets/hit_indicator/textures/indicator/shadow.png',
 }
 replace = {
     'com/misanthropy/hit_indicator/client/WindupIndicatorRenderer.class',
