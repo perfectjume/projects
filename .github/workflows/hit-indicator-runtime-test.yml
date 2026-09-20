@@ -229,6 +229,12 @@ jobs:
           rm -f src/main/java/com/misanthropy/hit_indicator/server/LearnedAttackPredictor.java
           rm -f build/classes/java/main/com/misanthropy/hit_indicator/server/LearnedAttackPredictor*.class
 
+          # Subsequent Gradle run tasks may recompile RuntimeTestMod. Point its
+          # compileOnly dependency at the final v14 jar so LearnedAttackPredictor
+          # resolves without creating a split runtime package.
+          cp /tmp/hit_indicator-1.21.1-neoforge-v14.jar libs/
+          sed -i 's/hit_indicator-1.21.1-neoforge-v5.jar/hit_indicator-1.21.1-neoforge-v14.jar/g' build.gradle
+
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
           cp /tmp/hit_indicator-1.21.1-neoforge-v14.jar run/mods/
 
