@@ -276,6 +276,10 @@ public final class LearnedAttackPredictor {
         return p == null ? 0 : p.samples.size();
     }
 
+    public static void flush(MinecraftServer server) {
+        if (server != null && dirty) save(server);
+    }
+
     public static void shutdown(MinecraftServer server) {
         if (server != null) save(server);
         PROFILES.clear();
