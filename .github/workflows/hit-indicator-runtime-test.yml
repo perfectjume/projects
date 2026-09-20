@@ -164,24 +164,7 @@ jobs:
           ! grep -q 'getstatic.*SHADOW' /tmp/renderer-v10.javap
           test "$(unzip -Z1 /tmp/hit_indicator-1.21.1-neoforge-v10.jar 'assets/hit_indicator/textures/indicator/timing/frame_*.png' | wc -l)" -eq 32
 
-          python - <<'PY'
-import io, zipfile
-from PIL import Image
-jar='/tmp/hit_indicator-1.21.1-neoforge-v10.jar'
-with zipfile.ZipFile(jar) as z:
-    ring=Image.open(io.BytesIO(z.read('assets/hit_indicator/textures/indicator/ring.png'))).convert('RGBA')
-    assert ring.size == (128,128)
-    assert sum(1 for p in ring.getdata() if p[3]) > 0
-    for i in range(32):
-        im=Image.open(io.BytesIO(z.read(f'assets/hit_indicator/textures/indicator/timing/frame_{i}.png'))).convert('RGBA')
-        assert im.size == (128,128)
-        assert sum(1 for p in im.getdata() if p[3]) > 0
-    for n in ['icon.png','lunge.png','slam.png','sure.png']:
-        im=Image.open(io.BytesIO(z.read('assets/hit_indicator/textures/indicator/'+n))).convert('RGBA')
-        assert im.size == (16,16)
-        assert all(p[3] == 0 for p in im.getdata())
-print('V10_ASSET_ASSERTIONS_PASS')
-PY
+          python ../runtime-test/VerifyV10.py /tmp/hit_indicator-1.21.1-neoforge-v10.jar
 
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
           cp /tmp/hit_indicator-1.21.1-neoforge-v10.jar run/mods/
