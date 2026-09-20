@@ -44,6 +44,7 @@ public final class LearnedAttackPredictor {
     private static final Map<String, Profile> PROFILES = new HashMap<>();
     private static final Map<Integer, Track> TRACKS = new HashMap<>();
     private static final Map<Integer, Prediction> ACTIVE = new HashMap<>();
+    private static int preparedRemaining = -1;
 
     private LearnedAttackPredictor() {}
 
@@ -138,8 +139,13 @@ public final class LearnedAttackPredictor {
      * Returns remaining ticks on an already-visible learned ring, or -1 when there
      * was no learned prediction and the normal windup should be created.
      */
-    public static int onIncoming(LivingEntity attacker, ServerPlayer victim) {
-        if (attacker.getTags().contains("hit_indicator_no_learn")) return -1;
+    public static void prepareIncoming(LivingEntity attacker, ServerPlayer victim) {
+        preparedRemaining = -1;
+        if (attacker.getTags().contains("hit_indicator_no_learn")) return;
+        preparedRemaining = computeIncoming(attacker, victim);
+    }
+
+    private static int computeIncoming(LivingEntity attacker, ServerPlayer victim) {
         long now = victim.getServer().getTickCount();
         String typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(attacker.getType()).toString();
 
@@ -168,14 +174,18 @@ public final class LearnedAttackPredictor {
         return remaining;
     }
 
-    public static int adjustDuration(int configuredTicks, int predictionRemaining) {
-        return predictionRemaining >= 0 ? Math.max(1, predictionRemaining) : configuredTicks;
+    public static int adjustDuration(int configuredTicks) {
+        return preparedRemaining >= 0 ? Math.max(1, preparedRemaining) : configuredTicks;
     }
 
     public static void sendWindupMaybe(ServerPlayer player, int attackerId, int durationTicks,
-                                       int kind, int moveTicks, int predictionRemaining) {
-        if (predictionRemaining < 0) {
-            HitIndicatorNetwork.sendWindup(player, attackerId, durationTicks, kind, moveTicks);
+                                       int kind, int moveTicks) {
+        try {
+            if (preparedRemaining < 0) {
+                HitIndicatorNetwork.sendWindup(player, attackerId, durationTicks, kind, moveTicks);
+            }
+        } finally {
+            preparedRemaining = -1;
         }
     }
 
@@ -200,6 +210,7 @@ public final class LearnedAttackPredictor {
         PROFILES.clear();
         TRACKS.clear();
         ACTIVE.clear();
+        preparedRemaining = -1;
     }
 
     private static void train(String typeKey, Track track, long hitTick) {
