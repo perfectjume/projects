@@ -398,7 +398,7 @@ jobs:
           grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=LUNGE' client-latest.log
           grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=SLAM' client-latest.log
           grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=SURE_HIT' client-latest.log
-          grep -q '\[HI-MATRIX\] LEARNED_BEFORE_FOURTH predicted=true' client-latest.log
+          grep -q '\[HI-MATRIX\] LEARNED_BEFORE_FOURTH predictedEver=true activeNow=true' client-latest.log
           grep -q '\[HI-LEARN\] PREDICT' client-latest.log
           grep -q '\[HI-LEARN\] PREDICTION_MATCH' client-latest.log
           ! grep -q '\[HI-MATRIX\] FAIL' client-latest.log
@@ -412,7 +412,31 @@ jobs:
           ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' client-latest.log
           ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' server-latest.log
           test -f mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json
-          python -c "import json; p='mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json'; d=json.load(open(p,'r',encoding='utf-8')); z=d.get('profiles',{}).get('minecraft:zombie',{}); assert z.get('confirmedHits',0)>=3,z; assert len(z.get('samples',[]))>=24,z; print('LEARNED_PROFILE_PERSISTENCE_PASS',z.get('confirmedHits'),len(z.get('samples',[])))"
+          python -c "import json; p='mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json'; d=json.load(open(p,'r',encoding='utf-8')); z=d.get('profiles',{}).get('minecraft:zombie',{}); assert z.get('confirmedHits',0)>=4,z; assert len(z.get('samples',[]))>=40,z; assert len(z.get('intervals',[]))>=2,z; print('LEARNED_PROFILE_PERSISTENCE_PASS',z.get('confirmedHits'),len(z.get('samples',[])),len(z.get('intervals',[])))"
+
+          cd mdk
+          rm -f run/logs/latest.log
+          export DISPLAY=:99
+          setsid ./gradlew --no-daemon runClient > ../reload-console.log 2>&1 &
+          RELOAD_PID=$!
+          RELOAD_OK=0
+          for i in $(seq 1 180); do
+            if grep -q '\[HI-LEARN\] LOAD profiles=1' run/logs/latest.log 2>/dev/null; then
+              RELOAD_OK=1
+              break
+            fi
+            if ! kill -0 "$RELOAD_PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          cp run/logs/latest.log ../reload-latest.log 2>/dev/null || true
+          kill -- -"$RELOAD_PID" 2>/dev/null || true
+          sleep 3
+          cd ..
+          test "$RELOAD_OK" -eq 1
+          grep -q '\[HI-LEARN\] LOAD profiles=1' reload-latest.log
+          echo 'LEARNED_PROFILE_RELOAD_PASS' >> runtime-summary.txt
           echo 'FULL_RUNTIME_MATRIX_PASS' >> runtime-summary.txt
           echo 'GROUND_PARTICLE_PARSE_PASS' >> runtime-summary.txt
 
@@ -427,6 +451,8 @@ jobs:
             server-latest.log
             client-console.log
             client-latest.log
+            reload-console.log
+            reload-latest.log
             filtered-runtime.log
             runtime-summary.txt
             glxinfo.txt
