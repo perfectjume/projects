@@ -426,7 +426,7 @@ jobs:
           ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' client-latest.log
           ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' server-latest.log
           test -f mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json
-          python -c "import json; p='mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json'; d=json.load(open(p,'r',encoding='utf-8')); z=d.get('profiles',{}).get('minecraft:zombie',{}); assert z.get('confirmedHits',0)>=4,z; assert len(z.get('samples',[]))>=40,z; assert len(z.get('intervals',[]))>=2,z; print('LEARNED_PROFILE_PERSISTENCE_PASS',z.get('confirmedHits'),len(z.get('samples',[])),len(z.get('intervals',[])))"
+          python -c "import json; p='mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json'; d=json.load(open(p,'r',encoding='utf-8')); z=d.get('profiles',{}).get('minecraft:zombie',{}); samples=z.get('samples',[]); intervals=z.get('intervals',[]); assert z.get('confirmedHits')==54,z; assert len(samples)==384,len(samples); assert len(intervals)==48,len(intervals); assert set(intervals)=={2},intervals; assert min(s.get('distance',0) for s in samples)>5.0,min(s.get('distance',0) for s in samples); print('LEARNED_PROFILE_PERSISTENCE_PASS',z.get('confirmedHits'),len(samples),len(intervals),min(s.get('distance',0) for s in samples))"
 
           cd mdk
           rm -f run/logs/latest.log
