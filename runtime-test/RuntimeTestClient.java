@@ -150,45 +150,50 @@ public final class RuntimeTestClient {
                 lastTickCount.put(id, living.tickCount);
                 }
 
-                if ("FREEZE".equals(scenario)
-                        && directFreezeProbeLogged
-                        && !WindupTracker.shouldFreeze(living)) {
-                    if (!releaseBridgeObserved && FrozenRenderClock.isReleaseBridge(living)) {
-                        float frozen = FrozenRenderClock.frozenPartial(living);
-                        float earlyRequested = 0.05F;
-                        float laterRequested = 0.40F;
-                        float early = FrozenRenderClock.partialFor(living, earlyRequested);
-                        float later = FrozenRenderClock.partialFor(living, laterRequested);
-                        float expectedEarly = Math.min(1.0F, frozen + earlyRequested);
-                        float expectedLater = Math.min(1.0F, frozen + laterRequested);
-                        boolean continuous =
-                                !Float.isNaN(frozen)
-                                && Math.abs(early - expectedEarly) < 0.0001F
-                                && Math.abs(later - expectedLater) < 0.0001F
-                                && early + 0.0001F >= frozen
-                                && later + 0.0001F >= early;
 
-                        releaseBridgeObserved = true;
-                        releaseBridgeGameTime = mc.level.getGameTime();
-                        releaseBridgeTickCount = living.tickCount;
-                        releaseBridgeExternalCount = MobAnimationProbe.count();
+            }
+        }
 
-                        LOGGER.info("[HI-MATRIX] CONTINUOUS_RELEASE_BRIDGE frozen={} early={} later={} continuous={} tickHeld={} externalCount={}",
-                                frozen, early, later, continuous, living.tickCount, releaseBridgeExternalCount);
-                    } else if (releaseBridgeObserved
-                            && !releaseResumeLogged
-                            && mc.level.getGameTime() > releaseBridgeGameTime) {
-                        float requested = 0.31F;
-                        float applied = FrozenRenderClock.partialFor(living, requested);
-                        boolean bridgeCleared = !FrozenRenderClock.isReleaseBridge(living);
-                        boolean tickResumed = living.tickCount > releaseBridgeTickCount;
-                        boolean externalResumed = MobAnimationProbe.count() > releaseBridgeExternalCount;
-                        boolean liveClock = Math.abs(applied - requested) < 0.0001F;
+        if (directFreezeProbeLogged
+                && !releaseResumeLogged
+                && freezeProbeEntityId >= 0) {
+            Entity frozenEntity = mc.level.getEntity(freezeProbeEntityId);
+            if (frozenEntity instanceof LivingEntity living
+                    && !WindupTracker.shouldFreeze(living)) {
+                if (!releaseBridgeObserved && FrozenRenderClock.isReleaseBridge(living)) {
+                    float frozen = FrozenRenderClock.frozenPartial(living);
+                    float earlyRequested = 0.05F;
+                    float laterRequested = 0.40F;
+                    float early = FrozenRenderClock.partialFor(living, earlyRequested);
+                    float later = FrozenRenderClock.partialFor(living, laterRequested);
+                    float expectedEarly = Math.min(1.0F, frozen + earlyRequested);
+                    float expectedLater = Math.min(1.0F, frozen + laterRequested);
+                    boolean continuous =
+                            !Float.isNaN(frozen)
+                            && Math.abs(early - expectedEarly) < 0.0001F
+                            && Math.abs(later - expectedLater) < 0.0001F
+                            && early + 0.0001F >= frozen
+                            && later + 0.0001F >= early;
 
-                        releaseResumeLogged = true;
-                        LOGGER.info("[HI-MATRIX] CONTINUOUS_RELEASE_RESUME bridgeCleared={} tickResumed={} externalResumed={} requested={} applied={} liveClock={}",
-                                bridgeCleared, tickResumed, externalResumed, requested, applied, liveClock);
-                    }
+                    releaseBridgeObserved = true;
+                    releaseBridgeGameTime = mc.level.getGameTime();
+                    releaseBridgeTickCount = living.tickCount;
+                    releaseBridgeExternalCount = MobAnimationProbe.count();
+
+                    LOGGER.info("[HI-MATRIX] CONTINUOUS_RELEASE_BRIDGE frozen={} early={} later={} continuous={} tickHeld={} externalCount={}",
+                            frozen, early, later, continuous, living.tickCount, releaseBridgeExternalCount);
+                } else if (releaseBridgeObserved
+                        && mc.level.getGameTime() > releaseBridgeGameTime) {
+                    float requested = 0.31F;
+                    float applied = FrozenRenderClock.partialFor(living, requested);
+                    boolean bridgeCleared = !FrozenRenderClock.isReleaseBridge(living);
+                    boolean tickResumed = living.tickCount > releaseBridgeTickCount;
+                    boolean externalResumed = MobAnimationProbe.count() > releaseBridgeExternalCount;
+                    boolean liveClock = Math.abs(applied - requested) < 0.0001F;
+
+                    releaseResumeLogged = true;
+                    LOGGER.info("[HI-MATRIX] CONTINUOUS_RELEASE_RESUME bridgeCleared={} tickResumed={} externalResumed={} requested={} applied={} liveClock={}",
+                            bridgeCleared, tickResumed, externalResumed, requested, applied, liveClock);
                 }
             }
         }
