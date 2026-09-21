@@ -5,7 +5,6 @@ import com.misanthropy.hit_indicator.api.HitIndicatorApi;
 import com.misanthropy.hit_indicator.api.HitIndicatorApi.HeavyKind;
 import com.misanthropy.hit_indicator.api.HitIndicatorApi.HeavyListener;
 import com.misanthropy.hit_indicator.server.AttackInterceptor;
-import com.misanthropy.hit_indicator.server.LearnedAttackPredictor;
 import com.misanthropy.hit_indicator.server.ShotInterceptor;
 import com.mojang.logging.LogUtils;
 import java.util.ArrayList;
@@ -56,7 +55,7 @@ public final class RuntimeTestMod {
         WHIFF,
         RANGED,
         CROWD,
-        LEARNED
+        UNIVERSAL_REPLAY
     }
 
     private static final Scenario[] ORDER = Scenario.values();
@@ -70,9 +69,7 @@ public final class RuntimeTestMod {
     private static float startHealth;
     private static boolean actionStarted;
     private static boolean done;
-    private static int learnedAttackCount;
-    private static boolean learnedPredictedBeforeFourth;
-    private static float learnedFourthHealthBefore = -1.0F;
+    private static float universalReplayHealthBefore = -1.0F;
     private static volatile String currentScenario = "WAITING";
 
     public RuntimeTestMod(IEventBus modBus, ModContainer container) {
@@ -163,7 +160,7 @@ public final class RuntimeTestMod {
                 case WHIFF -> testWhiff(t, now);
                 case RANGED -> testRanged(t, now);
                 case CROWD -> testCrowd(t, now);
-                case LEARNED -> testLearned(t, now);
+                case UNIVERSAL_REPLAY -> testUniversalReplay(t, now);
             }
             if (t > 180) fail("timeout scenario=" + s + " pending=" + pending());
         } catch (Throwable error) {
@@ -421,77 +418,50 @@ public final class RuntimeTestMod {
         pass(now, "CROWD_MAX_ONE_ENFORCED");
     }
 
-    private static void testLearned(int t, int now) {
+    private static void testUniversalReplay(int t, int now) {
         if (!actionStarted && t >= 5) {
-            LearnedAttackPredictor.reset();
-            HitIndicatorConfig.WINDUP_TICKS.set(1);
-            Zombie z = learningZombie(1.5D);
+            HitIndicatorConfig.WINDUP_TICKS.set(10);
+            Zombie z = zombie(1.5D);
             z.setNoAi(true);
             attacker = z;
             actionStarted = true;
-            learnedAttackCount = 0;
-            learnedPredictedBeforeFourth = false;
-            LOGGER.info("[HI-MATRIX] LEARNED_SETUP id={}", z.getId());
-        }
-
-        if (!(attacker instanceof Zombie z)) return;
-
-        if ((t == 15 || t == 40 || t == 65) && learnedAttackCount < 3) {
-            player.teleportTo(BX + 0.5D, BY + 1.0D, BZ + 0.5D);
-            player.setDeltaMovement(0.0D, 0.0D, 0.0D);
-            z.doHurtTarget(player);
-            learnedAttackCount++;
-            LOGGER.info("[HI-MATRIX] LEARNED_TRAIN_HIT count={} confirmed={} samples={}",
-                    learnedAttackCount,
-                    LearnedAttackPredictor.confirmedHits(z),
-                    LearnedAttackPredictor.sampleCount(z));
-        }
-
-        if (t >= 75 && t < 90 && LearnedAttackPredictor.isPredictionActive(z)) {
-            learnedPredictedBeforeFourth = true;
-        }
-
-        if (t == 89) {
-            player.teleportTo(BX + 0.5D, BY + 1.0D, BZ + 0.5D);
-            player.setDeltaMovement(0.0D, 0.0D, 0.0D);
             player.setHealth(player.getMaxHealth());
-            LOGGER.info("[HI-MATRIX] LEARNED_PRE_FOURTH_DISTANCE distance={}", z.distanceTo(player));
-        }
+            universalReplayHealthBefore = player.getHealth();
 
-        if (t == 90) {
-            boolean activeNow = LearnedAttackPredictor.isPredictionActive(z);
-            LOGGER.info("[HI-MATRIX] LEARNED_BEFORE_FOURTH predictedEver={} activeNow={} confirmed={} samples={}",
-                    learnedPredictedBeforeFourth, activeNow,
-                    LearnedAttackPredictor.confirmedHits(z),
-                    LearnedAttackPredictor.sampleCount(z));
-            if (!learnedPredictedBeforeFourth || !activeNow) {
-                fail("learned predictor was not active at fourth attack");
-                return;
-            }
-
-            float before = player.getHealth();
-            learnedFourthHealthBefore = before;
-            boolean result = z.doHurtTarget(player);
+            boolean directResult = player.hurt(player.damageSources().mobAttack(z), 7.0F);
             boolean pendingNow = AttackInterceptor.isWindingUp(z);
             int ticksLeft = AttackInterceptor.getWindupTicksLeft(z);
-            LOGGER.info("[HI-MATRIX] LEARNED_FOURTH_TRIGGER result={} pending={} ticksLeft={} healthBefore={} healthNow={}",
-                    result, pendingNow, ticksLeft, before, player.getHealth());
+            LOGGER.info("[HI-MATRIX] UNIVERSAL_TRIGGER result={} pending={} ticksLeft={} healthBefore={} healthNow={}",
+                    directResult, pendingNow, ticksLeft, universalReplayHealthBefore, player.getHealth());
 
-            if (!pendingNow || ticksLeft <= 1) {
-                fail("fourth hit did not reuse predicted ring; ticksLeft=" + ticksLeft);
+            if (!pendingNow || ticksLeft != 10) {
+                fail("universal replay did not queue fixed 10-tick windup; ticksLeft=" + ticksLeft);
                 return;
             }
-            if (player.getHealth() != before) {
-                fail("fourth damage applied before predicted ring closed");
+            if (player.getHealth() != universalReplayHealthBefore) {
+                fail("universal replay applied damage immediately");
                 return;
             }
         }
 
-        if (t > 90 && learnedFourthHealthBefore > 0.0F
-                && !AttackInterceptor.isWindingUp(z)
-                && player.getHealth() < learnedFourthHealthBefore) {
-            LearnedAttackPredictor.flush(player.getServer());
-            pass(now, "LEARNED_RING_ACTIVE_AT_HIT_DAMAGE_HELD_THEN_DELIVERED");
+        if (!actionStarted || !(attacker instanceof Zombie z)) return;
+
+        if (AttackInterceptor.isWindingUp(z)) {
+            if (player.getHealth() != universalReplayHealthBefore) {
+                fail("universal replay damaged player before ring completion");
+            }
+            return;
+        }
+
+        if (t > 5) {
+            float dealt = universalReplayHealthBefore - player.getHealth();
+            LOGGER.info("[HI-MATRIX] UNIVERSAL_DELIVERED dealt={} healthBefore={} healthAfter={}",
+                    dealt, universalReplayHealthBefore, player.getHealth());
+            if (dealt < 6.5F || dealt > 7.5F) {
+                fail("captured damage was not replayed; expected about 7.0 dealt=" + dealt);
+                return;
+            }
+            pass(now, "UNIVERSAL_CAPTURED_DAMAGE_DELAYED_AND_REPLAYED");
         }
     }
 
