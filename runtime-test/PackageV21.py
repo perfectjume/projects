@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import json
+import glob
+import os
 import sys
 import zipfile
 
@@ -13,6 +15,12 @@ replacements = {
     "com/misanthropy/hit_indicator/mixin/client/ClientLevelTimeStopMixin.class": level_cls,
     "com/misanthropy/hit_indicator/mixin/client/LevelRendererTimeStopMixin.class": renderer_cls,
 }
+
+clock_dir = os.path.dirname(clock_cls)
+for nested in glob.glob(os.path.join(clock_dir, "FrozenRenderClock$*.class")):
+    replacements[
+        "com/misanthropy/hit_indicator/client/" + os.path.basename(nested)
+    ] = nested
 
 remove = {
     "com/misanthropy/hit_indicator/mixin/client/MobFreezeMixin.class",
