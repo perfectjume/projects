@@ -373,14 +373,7 @@ jobs:
           unzip -t /tmp/hit_indicator-1.21.1-neoforge-v20.jar
           javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v20.jar -c -p \
             com.misanthropy.hit_indicator.client.WindupTracker > /tmp/windup-v20.javap
-          python - <<'PY'
-import re
-text=open('/tmp/windup-v20.javap').read()
-block=text[text.index('public static boolean shouldFreeze'):text.index('public static void onClientTick')]
-assert 'long 2l' not in block, block
-assert 'long 0l' in block, block
-print('V20_IMMEDIATE_FREEZE_THRESHOLD_PASS')
-PY
+          python -c "text=open('/tmp/windup-v20.javap').read(); block=text[text.index('public static boolean shouldFreeze'):text.index('public static void onClientTick')]; assert 'long 2l' not in block, block; assert 'long 0l' in block, block; print('V20_IMMEDIATE_FREEZE_THRESHOLD_PASS')"
           python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v20.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); req={'client.MobFreezeMixin','client.LivingEntityFreezeMixin','client.LivingEntityRenderContextMixin','client.PlayerAnimatorInterpolationFreezeMixin'}; assert req.issubset(set(m.get('client') or [])),m; print('V20_BETTERCOMBAT_COMPAT_PRESENT_PASS')"
 
 
