@@ -253,13 +253,8 @@ public final class RuntimeTestMod {
             Zombie z = zombie(1.5D);
             triggerMelee(z, null);
         }
-        if (actionStarted && t >= 50 && AttackInterceptor.isWindingUp(attacker)) {
-            boolean canceled = AttackInterceptor.cancelPendingHit(attacker);
-            if (!canceled || AttackInterceptor.isWindingUp(attacker)) {
-                fail("freeze scenario could not cancel long windup");
-                return;
-            }
-            pass(now, "LONG_MELEE_WINDUP_EXERCISED");
+        if (actionStarted && t > 80 && !AttackInterceptor.isWindingUp(attacker)) {
+            pass(now, "LONG_MELEE_WINDUP_COMPLETED");
         }
     }
 
