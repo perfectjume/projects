@@ -1,0 +1,33 @@
+name: LWJGL Assimp 3.3.3 bundle
+on:
+  push:
+    branches: [port7-runtime-bundle]
+    paths:
+      - '.github/workflows/lwjgl-assimp-3.3.3.yml'
+  workflow_dispatch:
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Assimp bindings and natives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/assimp
+          BASE=https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl-assimp/3.3.3
+          for f in \
+            lwjgl-assimp-3.3.3.jar \
+            lwjgl-assimp-3.3.3-natives-linux.jar \
+            lwjgl-assimp-3.3.3-natives-windows.jar \
+            lwjgl-assimp-3.3.3-natives-macos.jar \
+            lwjgl-assimp-3.3.3-natives-macos-arm64.jar; do
+            curl -fsSL --retry 3 "$BASE/$f" -o "/tmp/assimp/$f"
+          done
+          sha256sum /tmp/assimp/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lwjgl-assimp-3.3.3
+          path: /tmp/assimp/*
+          compression-level: 0
