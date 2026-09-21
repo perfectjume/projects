@@ -1,0 +1,51 @@
+name: Resolve m220395
+on:
+  push:
+    branches: [port7-runtime-bundle]
+    paths: ['.github/workflows/resolve-m220395.yml']
+  workflow_dispatch:
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Resolve exact SRG to Mojmap
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/MinecraftForge/MCPConfig/master/versions/release/1.20.1/joined.tsrg -o /tmp/joined.tsrg
+          curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json -o /tmp/manifest.json
+          URL="$(jq -r '.versions[] | select(.id=="1.20.1") | .url' /tmp/manifest.json)"
+          curl -fsSL "$URL" -o /tmp/ver.json
+          MAP="$(jq -r '.downloads.server_mappings.url' /tmp/ver.json)"
+          curl -fsSL "$MAP" -o /tmp/server.txt
+          python - <<'PY'
+srg='m_220395_'
+current=None
+found=None
+for line in open('/tmp/joined.tsrg',errors='replace'):
+    if not line.startswith('\t'):
+        p=line.rstrip().split()
+        if len(p)>=2: current=p
+    else:
+        p=line.strip().split()
+        if srg in p:
+            found=(current,p); break
+print('TSRG_CLASS',found[0])
+print('TSRG_MEMBER',found[1])
+obf_class=found[0][0]; obf_method=found[1][0]; desc=found[1][1]
+print('OBF',obf_class,obf_method,desc)
+active=False; hdr=None; lines=[]
+for line in open('/tmp/server.txt',errors='replace'):
+    if line and not line[0].isspace() and ' -> ' in line and line.rstrip().endswith(':'):
+        active=False
+        lhs,rhs=line.rstrip()[:-1].split(' -> ')
+        if rhs==obf_class:
+            hdr=(lhs,rhs); active=True; continue
+    elif active:
+        if line and not line[0].isspace(): break
+        lines.append(line.rstrip())
+print('OFFICIAL_CLASS',hdr)
+for line in lines:
+    if line.strip().endswith(' -> '+obf_method):
+        print('MATCH',line.strip())
+PY
