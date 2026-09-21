@@ -282,7 +282,6 @@ jobs:
             /tmp/hit_indicator-1.21.1-neoforge-v16.jar \
             build/classes/java/main/com/misanthropy/hit_indicator/mixin/client/LivingEntityFreezeMixin.class \
             /tmp/hit_indicator-1.21.1-neoforge-v17.jar
-            /tmp/hit_indicator-1.21.1-neoforge-v18.jar
 
           unzip -t /tmp/hit_indicator-1.21.1-neoforge-v17.jar
           javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v17.jar -v -p \
@@ -532,6 +531,7 @@ jobs:
             /tmp/hit_indicator-1.21.1-neoforge-v15.jar
             /tmp/hit_indicator-1.21.1-neoforge-v16.jar
             /tmp/hit_indicator-1.21.1-neoforge-v17.jar
+            /tmp/hit_indicator-1.21.1-neoforge-v18.jar
             /tmp/attack-v15.javap
             /tmp/attack-v16.javap
             /tmp/freeze-v17.javap
