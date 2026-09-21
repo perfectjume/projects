@@ -38,6 +38,8 @@ public final class RuntimeTestClient {
     private static boolean cameraStartedLogged;
     private static boolean cameraAppliedLogged;
     private static boolean directFreezeProbeLogged;
+    private static boolean freezeReleaseProbeLogged;
+    private static int freezeProbeEntityId = -1;
     private static Field cameraTicksField;
 
     @SubscribeEvent
@@ -76,6 +78,7 @@ public final class RuntimeTestClient {
                     living.tick();
                     int after = living.tickCount;
                     directFreezeProbeLogged = true;
+                    freezeProbeEntityId = id;
                     LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_DIRECT_PROBE before={} after={} canceled={}",
                             before, after, before == after);
                 }
@@ -107,6 +110,23 @@ public final class RuntimeTestClient {
                 && !cancelClearedLogged) {
             cancelClearedLogged = true;
             LOGGER.info("[HI-MATRIX] CLIENT_CANCEL_CLEARED");
+        }
+
+        if ("FREEZE".equals(scenario)
+                && directFreezeProbeLogged
+                && hadActiveInScenario
+                && WindupTracker.active().isEmpty()
+                && !freezeReleaseProbeLogged
+                && freezeProbeEntityId >= 0) {
+            Entity entity = mc.level.getEntity(freezeProbeEntityId);
+            if (entity instanceof LivingEntity living) {
+                int before = living.tickCount;
+                living.tick();
+                int after = living.tickCount;
+                freezeReleaseProbeLogged = true;
+                LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_RELEASE_PROBE before={} after={} resumed={}",
+                        before, after, after > before);
+            }
         }
 
         if ("SLAM".equals(scenario) && cameraTicksLeft() > 0 && !cameraStartedLogged) {
