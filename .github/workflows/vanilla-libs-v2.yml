@@ -1,0 +1,20 @@
+name: Vanilla 1.21.1 Linux libs bundle v2
+on:
+  push:
+    branches: [port7-runtime-bundle]
+    paths:
+      - '.github/workflows/vanilla-libs-v2.yml'
+      - 'runtime-test/download-vanilla-1.21.1-linux-libs.sh'
+  workflow_dispatch:
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash runtime-test/download-vanilla-1.21.1-linux-libs.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanilla-1.21.1-linux-libs-v2
+          path: /tmp/vanilla-1.21.1-linux-libs.tar.gz
+          compression-level: 0
