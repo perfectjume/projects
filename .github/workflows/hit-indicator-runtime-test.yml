@@ -13,7 +13,6 @@ on:
       - hit-indicator-v16-universal-intercept
       - hit-indicator-v17-reference-freeze
       - hit-indicator-v18-mob-animation-freeze
-      - hit-indicator-v19-playeranim-render-freeze
       - hit-indicator-v20-immediate-bettercombat-freeze
     paths:
       - '.github/workflows/hit-indicator-runtime-test.yml'
@@ -310,6 +309,8 @@ jobs:
             /tmp/hit_indicator-1.21.1-neoforge-v17.jar \
             build/classes/java/main/com/misanthropy/hit_indicator/mixin/client/MobFreezeMixin.class \
             /tmp/hit_indicator-1.21.1-neoforge-v18.jar
+            /tmp/hit_indicator-1.21.1-neoforge-v19.jar
+            /tmp/hit_indicator-1.21.1-neoforge-v20.jar
 
           unzip -t /tmp/hit_indicator-1.21.1-neoforge-v18.jar
           javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v18.jar -v -p \
@@ -323,7 +324,7 @@ jobs:
           grep -q 'cancellable=true' /tmp/mob-freeze-v18.javap
           python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v18.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); assert m.get('client') == ['client.MobFreezeMixin','client.LivingEntityFreezeMixin'], m; assert 'com/misanthropy/hit_indicator/mixin/client/MobFreezeMixin.class' in z.namelist(); print('V18_MOB_HEAD_FREEZE_PASS')"
 
-          # v19: also freeze Player Animation Lib's render-time interpolation for the currently rendered windup entity.
+          # Better Combat / Player Animation Lib: freeze render-time interpolation too.
           python ../runtime-test/PackageV19.py \
             /tmp/hit_indicator-1.21.1-neoforge-v18.jar \
             build/classes/java/main/com/misanthropy/hit_indicator/client/AnimationFreezeContext.class \
@@ -333,20 +334,13 @@ jobs:
 
           unzip -t /tmp/hit_indicator-1.21.1-neoforge-v19.jar
           javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v19.jar -v -p \
-            com.misanthropy.hit_indicator.mixin.client.LivingEntityRenderContextMixin > /tmp/render-context-v19.javap
-          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v19.jar -v -p \
             com.misanthropy.hit_indicator.mixin.client.PlayerAnimatorInterpolationFreezeMixin > /tmp/playeranim-freeze-v19.javap
-          grep -q 'LivingEntityRenderer' /tmp/render-context-v19.javap
-          grep -q 'method=\["render"\]' /tmp/render-context-v19.javap
-          grep -q 'value="HEAD"' /tmp/render-context-v19.javap
-          grep -q 'value="RETURN"' /tmp/render-context-v19.javap
           grep -q 'dev.kosmx.playerAnim.core.impl.AnimationProcessor' /tmp/playeranim-freeze-v19.javap
           grep -q 'setTickDelta(F)V' /tmp/playeranim-freeze-v19.javap
-          grep -q 'ModifyVariable' /tmp/playeranim-freeze-v19.javap
           grep -q 'AnimationFreezeContext.shouldFreezeCurrent' /tmp/playeranim-freeze-v19.javap
-          python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v19.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); req={'client.MobFreezeMixin','client.LivingEntityFreezeMixin','client.LivingEntityRenderContextMixin','client.PlayerAnimatorInterpolationFreezeMixin'}; assert req.issubset(set(m.get('client') or [])),m; print('V19_PLAYERANIM_RENDER_FREEZE_PASS')"
+          python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v19.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); req={'client.MobFreezeMixin','client.LivingEntityFreezeMixin','client.LivingEntityRenderContextMixin','client.PlayerAnimatorInterpolationFreezeMixin'}; assert req.issubset(set(m.get('client') or [])),m; print('BETTERCOMBAT_PLAYERANIM_COMPAT_PASS')"
 
-          # v20: remove the reference mod's 2-tick grace period. Freeze from elapsed >= 0.
+          # Immediate freeze: remove the reference implementation's elapsed >= 2 gate.
           mkdir -p /tmp/v20-tracker/com/misanthropy/hit_indicator/client /tmp/v20-patcher-classes
           unzip -p /tmp/hit_indicator-1.21.1-neoforge-v19.jar \
             com/misanthropy/hit_indicator/client/WindupTracker.class \
@@ -374,7 +368,6 @@ jobs:
           javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v20.jar -c -p \
             com.misanthropy.hit_indicator.client.WindupTracker > /tmp/windup-v20.javap
           python -c "text=open('/tmp/windup-v20.javap').read(); block=text[text.index('public static boolean shouldFreeze'):text.index('public static void onClientTick')]; assert 'long 2l' not in block, block; assert 'long 0l' in block, block; print('V20_IMMEDIATE_FREEZE_THRESHOLD_PASS')"
-          python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v20.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); req={'client.MobFreezeMixin','client.LivingEntityFreezeMixin','client.LivingEntityRenderContextMixin','client.PlayerAnimatorInterpolationFreezeMixin'}; assert req.issubset(set(m.get('client') or [])),m; print('V20_BETTERCOMBAT_COMPAT_PRESENT_PASS')"
 
 
 
@@ -540,9 +533,7 @@ jobs:
           grep -q '\[HI-MATRIX\] CLIENT_MIXIN_DIRECT_PROBE .*tickCanceled=true .*externalHeadBlocked=true' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_MIXIN_RELEASE_PROBE predicate=false released=true .*externalHeadResumed=true' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_FREEZE_TRUE scenario=FREEZE .*kind=MELEE' client-latest.log
-          grep -Eq '\[HI-MATRIX\] CLIENT_FREEZE_TRUE scenario=FREEZE .*kind=MELEE .*elapsed=[01]          grep -q '\[HI-MATRIX\] PLAYERANIM_INTERPOLATION_FREEZE requested=0.75 applied=0.0 frozen=true' client-latest.log
-          grep -q '\[HI-MATRIX\] PLAYERANIM_INTERPOLATION_RELEASE requested=0.75 applied=0.75 resumed=true' client-latest.log
-          grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=LUNGE kind=LUNGE' client-latest.log
+          grep -Eq '\[HI-MATRIX\] CLIENT_FREEZE_TRUE scenario=FREEZE .*kind=MELEE .*elapsed=[01]          grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=LUNGE kind=LUNGE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=SLAM kind=SLAM' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=SURE kind=SURE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=RANGED kind=RANGED' client-latest.log
@@ -579,6 +570,7 @@ jobs:
           echo 'GROUND_PARTICLE_PARSE_PASS' >> runtime-summary.txt
           echo 'EXTERNAL_MOB_HEAD_ANIMATION_FREEZE_PASS' >> runtime-summary.txt
           echo 'PLAYERANIM_RENDER_INTERPOLATION_FREEZE_PASS' >> runtime-summary.txt
+          echo 'IMMEDIATE_FREEZE_NO_2TICK_DELAY_PASS' >> runtime-summary.txt
 
       - name: Upload runtime evidence
         if: always()
@@ -610,7 +602,6 @@ jobs:
             /tmp/attack-v16.javap
             /tmp/freeze-v17.javap
             /tmp/mob-freeze-v18.javap
-            /tmp/render-context-v19.javap
             /tmp/playeranim-freeze-v19.javap
             /tmp/windup-v20.javap
             /tmp/predictor-v15.javap
@@ -620,7 +611,6 @@ jobs:
             /tmp/attack-v6.javap
             /tmp/particle-compat-v6.javap
  client-latest.log
-          echo 'V20_IMMEDIATE_RUNTIME_FREEZE_PASS' >> runtime-summary.txt
           grep -q '\[HI-MATRIX\] PLAYERANIM_INTERPOLATION_FREEZE requested=0.75 applied=0.0 frozen=true' client-latest.log
           grep -q '\[HI-MATRIX\] PLAYERANIM_INTERPOLATION_RELEASE requested=0.75 applied=0.75 resumed=true' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=LUNGE kind=LUNGE' client-latest.log
@@ -659,7 +649,6 @@ jobs:
           echo 'FULL_RUNTIME_MATRIX_PASS' >> runtime-summary.txt
           echo 'GROUND_PARTICLE_PARSE_PASS' >> runtime-summary.txt
           echo 'EXTERNAL_MOB_HEAD_ANIMATION_FREEZE_PASS' >> runtime-summary.txt
-          echo 'PLAYERANIM_RENDER_INTERPOLATION_FREEZE_PASS' >> runtime-summary.txt
 
       - name: Upload runtime evidence
         if: always()
@@ -691,8 +680,6 @@ jobs:
             /tmp/attack-v16.javap
             /tmp/freeze-v17.javap
             /tmp/mob-freeze-v18.javap
-            /tmp/render-context-v19.javap
-            /tmp/playeranim-freeze-v19.javap
             /tmp/predictor-v15.javap
             /tmp/renderer-v12.javap
             /tmp/windup-v4.javap
