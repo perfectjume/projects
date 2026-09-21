@@ -1,0 +1,73 @@
+name: Vanilla 1.21.1 Linux client libraries
+
+on:
+  push:
+    branches:
+      - port7-runtime-bundle
+    paths:
+      - '.github/workflows/vanilla-1.21.1-linux-libs.yml'
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact 1.21.1 Linux libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vanilla-libs/libraries
+          curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json -o /tmp/manifest.json
+          URL=$(python - <<'PY'
+import json
+j=json.load(open('/tmp/manifest.json'))
+print(next(v['url'] for v in j['versions'] if v['id']=='1.21.1'))
+PY
+          )
+          curl -fsSL "$URL" -o /tmp/1.21.1.json
+          python - <<'PY'
+import json, os, pathlib, urllib.request, hashlib
+j=json.load(open('/tmp/1.21.1.json'))
+base=pathlib.Path('/tmp/vanilla-libs/libraries')
+def allowed(lib):
+    rules=lib.get('rules')
+    if not rules: return True
+    allow=False
+    for r in rules:
+        match=True
+        o=r.get('os')
+        if o:
+            if o.get('name') and o['name']!='linux': match=False
+        if match: allow=(r.get('action')=='allow')
+    return allow
+items=[]
+for lib in j['libraries']:
+    if not allowed(lib): continue
+    d=lib.get('downloads',{}).get('artifact')
+    if d and d.get('path') and d.get('url'): items.append(d)
+    cls=lib.get('downloads',{}).get('classifiers',{})
+    for k in ('natives-linux','natives-linux-64'):
+        d=cls.get(k)
+        if d and d.get('path') and d.get('url'): items.append(d)
+seen=set()
+for i,d in enumerate(items,1):
+    if d['path'] in seen: continue
+    seen.add(d['path'])
+    p=base/d['path']; p.parent.mkdir(parents=True,exist_ok=True)
+    print(f'{i}/{len(items)} {d["path"]}', flush=True)
+    urllib.request.urlretrieve(d['url'],p)
+    data=p.read_bytes()
+    if d.get('sha1') and hashlib.sha1(data).hexdigest()!=d['sha1']:
+        raise SystemExit('sha1 mismatch '+d['path'])
+print('FILES',len(seen))
+print('BYTES',sum((base/p).stat().st_size for p in seen))
+PY
+          tar -C /tmp/vanilla-libs -czf /tmp/vanilla-1.21.1-linux-libs.tar.gz libraries
+          sha256sum /tmp/vanilla-1.21.1-linux-libs.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanilla-1.21.1-linux-libs
+          path: /tmp/vanilla-1.21.1-linux-libs.tar.gz
+          compression-level: 0
