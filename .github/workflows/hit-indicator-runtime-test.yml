@@ -11,6 +11,7 @@ on:
       - hit-indicator-v14-learned-predictor
       - hit-indicator-v15-persistent-learner
       - hit-indicator-v16-universal-intercept
+      - hit-indicator-v17-reference-freeze
     paths:
       - '.github/workflows/hit-indicator-runtime-test.yml'
       - 'runtime-test/**'
@@ -107,11 +108,14 @@ jobs:
           mkdir -p src/main/java/com/misanthropy/hit_indicator/server
           cp ../runtime-test/ParticleCompat.java src/main/java/com/misanthropy/hit_indicator/server/ParticleCompat.java
           cp ../runtime-test/LearnedAttackPredictor.java src/main/java/com/misanthropy/hit_indicator/server/LearnedAttackPredictor.java
+          mkdir -p src/main/java/com/misanthropy/hit_indicator/mixin/client
+          cp ../runtime-test/LivingEntityFreezeMixin.java src/main/java/com/misanthropy/hit_indicator/mixin/client/LivingEntityFreezeMixin.java
 
           chmod +x gradlew
           ./gradlew --no-daemon compileJava
 
           test -f build/classes/java/main/com/misanthropy/hit_indicator/server/ParticleCompat.class
+          test -f build/classes/java/main/com/misanthropy/hit_indicator/mixin/client/LivingEntityFreezeMixin.class
           python ../runtime-test/patch_v6.py \
             /tmp/hit_indicator-1.21.1-neoforge-v5.jar \
             build/classes/java/main/com/misanthropy/hit_indicator/server/ParticleCompat.class \
@@ -264,18 +268,37 @@ jobs:
           python -c "import zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v16.jar'); bad=[n for n in z.namelist() if 'LearnedAttackPredictor' in n]; assert not bad,bad; print('V16_NO_LEARNER_CLASSES_PASS')"
           python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v16.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); assert m.get('client') == [], m; print('V16_NO_FREEZE_MIXIN_PASS')"
 
+          # v17: restore the reference mod's exact client animation-freeze mechanism.
+          python ../runtime-test/PackageV17.py \
+            /tmp/hit_indicator-1.21.1-neoforge-v16.jar \
+            build/classes/java/main/com/misanthropy/hit_indicator/mixin/client/LivingEntityFreezeMixin.class \
+            /tmp/hit_indicator-1.21.1-neoforge-v17.jar
+
+          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v17.jar
+          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v17.jar -v -p \
+            com.misanthropy.hit_indicator.mixin.client.LivingEntityFreezeMixin > /tmp/freeze-v17.javap
+          grep -q 'WindupTracker.shouldFreeze' /tmp/freeze-v17.javap
+          grep -q 'CallbackInfo.cancel' /tmp/freeze-v17.javap
+          grep -q 'method=\["tick"\]' /tmp/freeze-v17.javap
+          grep -q 'value="HEAD"' /tmp/freeze-v17.javap
+          grep -q 'cancellable=true' /tmp/freeze-v17.javap
+          python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v17.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); assert m.get('client') == ['client.LivingEntityFreezeMixin'], m; assert 'com/misanthropy/hit_indicator/mixin/client/LivingEntityFreezeMixin.class' in z.namelist(); print('V17_REFERENCE_FREEZE_MIXIN_PASS')"
+
+
 
           rm -f src/main/java/com/misanthropy/hit_indicator/server/LearnedAttackPredictor.java
           rm -f build/classes/java/main/com/misanthropy/hit_indicator/server/LearnedAttackPredictor*.class
+          rm -f src/main/java/com/misanthropy/hit_indicator/mixin/client/LivingEntityFreezeMixin.java
+          rm -f build/classes/java/main/com/misanthropy/hit_indicator/mixin/client/LivingEntityFreezeMixin.class
 
           # Subsequent Gradle run tasks may recompile RuntimeTestMod. Point its
-          # compileOnly/runtime now point at the final v16 universal binary.
+          # compileOnly/runtime now point at the final v17 reference-freeze binary.
           # The predictor source/classes are compiler-only intermediates and are removed below.
-          cp /tmp/hit_indicator-1.21.1-neoforge-v16.jar libs/
-          sed -i 's/hit_indicator-1.21.1-neoforge-v5.jar/hit_indicator-1.21.1-neoforge-v16.jar/g' build.gradle
+          cp /tmp/hit_indicator-1.21.1-neoforge-v17.jar libs/
+          sed -i 's/hit_indicator-1.21.1-neoforge-v5.jar/hit_indicator-1.21.1-neoforge-v17.jar/g' build.gradle
 
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
-          cp /tmp/hit_indicator-1.21.1-neoforge-v16.jar run/mods/
+          cp /tmp/hit_indicator-1.21.1-neoforge-v17.jar run/mods/
 
       - name: Generate real Minecraft world
         shell: bash
@@ -414,11 +437,13 @@ jobs:
           grep -q '\[HI-MATRIX\] CLIENT_WINDUP scenario=SURE .* kind=SURE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_WINDUP scenario=RANGED .* kind=RANGED' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=FREEZE kind=MELEE' client-latest.log
+          grep -q '\[HI-MATRIX\] CLIENT_MIXIN_DIRECT_PROBE .*canceled=true' client-latest.log
+          grep -q '\[HI-MATRIX\] CLIENT_MIXIN_RELEASE_PROBE .*resumed=true' client-latest.log
+          grep -q '\[HI-MATRIX\] CLIENT_FREEZE_TRUE scenario=FREEZE .*kind=MELEE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=LUNGE kind=LUNGE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=SLAM kind=SLAM' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=SURE kind=SURE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=RANGED kind=RANGED' client-latest.log
-          ! grep -q 'LivingEntityFreezeMixin' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_CANCEL_CLEARED' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_END scenario=DODGE .* reason=1' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_END scenario=WHIFF .* reason=2' client-latest.log
@@ -477,6 +502,7 @@ jobs:
             /tmp/hit_indicator-1.21.1-neoforge-v16.jar
             /tmp/attack-v15.javap
             /tmp/attack-v16.javap
+            /tmp/freeze-v17.javap
             /tmp/predictor-v15.javap
             /tmp/renderer-v12.javap
             /tmp/windup-v4.javap
