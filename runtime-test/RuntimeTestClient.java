@@ -1,7 +1,7 @@
 package com.example.examplemod;
 
-import com.misanthropy.hit_indicator.client.AnimationFreezeContext;
 import com.misanthropy.hit_indicator.client.CameraShake;
+import com.misanthropy.hit_indicator.client.FrozenRenderClock;
 import com.misanthropy.hit_indicator.client.WindupTracker;
 import com.misanthropy.hit_indicator.client.WindupTracker.Windup;
 import com.mojang.logging.LogUtils;
@@ -22,7 +22,6 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import org.slf4j.Logger;
-import dev.kosmx.playerAnim.core.impl.AnimationProcessor;
 
 @EventBusSubscriber(modid = RuntimeTestMod.MODID, value = Dist.CLIENT)
 public final class RuntimeTestClient {
@@ -41,8 +40,8 @@ public final class RuntimeTestClient {
     private static boolean cameraAppliedLogged;
     private static boolean directFreezeProbeLogged;
     private static boolean freezeReleaseProbeLogged;
-    private static boolean playerAnimatorFreezeProbeLogged;
-    private static boolean playerAnimatorReleaseProbeLogged;
+    private static boolean renderClockFreezeProbeLogged;
+    private static boolean renderClockReleaseProbeLogged;
     private static int freezeProbeEntityId = -1;
     private static Field cameraTicksField;
 
@@ -81,27 +80,52 @@ public final class RuntimeTestClient {
                 if ("FREEZE".equals(scenario) && !directFreezeProbeLogged) {
                     int before = living.tickCount;
                     int externalBefore = MobAnimationProbe.count();
-                    living.tick();
+
+                    double x = living.getX();
+                    double y = living.getY();
+                    double z = living.getZ();
+                    float xRot = living.getXRot();
+                    float yRot = living.getYRot();
+
+                    living.xOld = x - 0.75D;
+                    living.yOld = y - 0.50D;
+                    living.zOld = z + 0.25D;
+                    living.xo = x - 1.25D;
+                    living.yo = y - 1.00D;
+                    living.zo = z + 0.75D;
+                    living.xRotO = xRot - 17.0F;
+                    living.yRotO = yRot + 23.0F;
+                    living.walkDistO = living.walkDist - 0.8F;
+                    living.yBodyRotO = living.yBodyRot - 31.0F;
+                    living.yHeadRotO = living.yHeadRot + 29.0F;
+                    living.oAttackAnim = living.attackAnim - 0.35F;
+
+                    mc.level.tickNonPassenger(living);
+
                     int after = living.tickCount;
                     int externalAfter = MobAnimationProbe.count();
+                    boolean maintenanceStable =
+                            living.xOld == x && living.yOld == y && living.zOld == z
+                            && living.xo == x && living.yo == y && living.zo == z
+                            && living.xRotO == xRot && living.yRotO == yRot
+                            && living.walkDistO == living.walkDist
+                            && living.yBodyRotO == living.yBodyRot
+                            && living.yHeadRotO == living.yHeadRot
+                            && living.oAttackAnim == living.attackAnim;
+
                     directFreezeProbeLogged = true;
                     freezeProbeEntityId = id;
-                    LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_DIRECT_PROBE before={} after={} tickCanceled={} externalHeadBefore={} externalHeadAfter={} externalHeadBlocked={}",
-                            before, after, before == after, externalBefore, externalAfter, externalBefore == externalAfter);
+                    LOGGER.info("[HI-MATRIX] CLIENT_TIME_STOP_DIRECT_PROBE before={} after={} tickCanceled={} maintenanceStable={} externalHeadBefore={} externalHeadAfter={} externalHeadBlocked={}",
+                            before, after, before == after, maintenanceStable,
+                            externalBefore, externalAfter, externalBefore == externalAfter);
                 }
 
-                if ("FREEZE".equals(scenario) && !playerAnimatorFreezeProbeLogged) {
-                    AnimationProcessor processor = new AnimationProcessor();
-                    AnimationFreezeContext.push(living);
-                    try {
-                        processor.setTickDelta(0.75F);
-                    } finally {
-                        AnimationFreezeContext.pop();
-                    }
-                    playerAnimatorFreezeProbeLogged = true;
-                    LOGGER.info("[HI-MATRIX] PLAYERANIM_INTERPOLATION_FREEZE requested=0.75 applied={} frozen={}",
-                            processor.hitindicatortest$getLastTickDelta(),
-                            processor.hitindicatortest$getLastTickDelta() == 0.0F);
+                if ("FREEZE".equals(scenario) && !renderClockFreezeProbeLogged) {
+                    float first = FrozenRenderClock.partialFor(living, 0.73F);
+                    float second = FrozenRenderClock.partialFor(living, 0.11F);
+                    renderClockFreezeProbeLogged = true;
+                    LOGGER.info("[HI-MATRIX] FROZEN_RENDER_CLOCK first={} second={} stable={}",
+                            first, second, Math.abs(first - second) < 0.0001F);
                 }
 
                 String freezeKey = scenario + ":" + id;
@@ -143,24 +167,21 @@ public final class RuntimeTestClient {
             if (entity instanceof LivingEntity living) {
                 boolean predicate = WindupTracker.shouldFreeze(living);
                 int externalBefore = MobAnimationProbe.count();
-                living.tick();
+                int tickBefore = living.tickCount;
+                mc.level.tickNonPassenger(living);
                 int externalAfter = MobAnimationProbe.count();
+                int tickAfter = living.tickCount;
                 freezeReleaseProbeLogged = true;
-                LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_RELEASE_PROBE predicate={} released={} externalHeadBefore={} externalHeadAfter={} externalHeadResumed={}",
-                        predicate, !predicate, externalBefore, externalAfter, externalAfter > externalBefore);
+                LOGGER.info("[HI-MATRIX] CLIENT_TIME_STOP_RELEASE_PROBE predicate={} released={} tickResumed={} externalHeadBefore={} externalHeadAfter={} externalHeadResumed={}",
+                        predicate, !predicate, tickAfter > tickBefore,
+                        externalBefore, externalAfter, externalAfter > externalBefore);
 
-                if (!playerAnimatorReleaseProbeLogged) {
-                    AnimationProcessor processor = new AnimationProcessor();
-                    AnimationFreezeContext.push(living);
-                    try {
-                        processor.setTickDelta(0.75F);
-                    } finally {
-                        AnimationFreezeContext.pop();
-                    }
-                    playerAnimatorReleaseProbeLogged = true;
-                    LOGGER.info("[HI-MATRIX] PLAYERANIM_INTERPOLATION_RELEASE requested=0.75 applied={} resumed={}",
-                            processor.hitindicatortest$getLastTickDelta(),
-                            Math.abs(processor.hitindicatortest$getLastTickDelta() - 0.75F) < 0.0001F);
+                if (!renderClockReleaseProbeLogged) {
+                    float requested = 0.61F;
+                    float applied = FrozenRenderClock.partialFor(living, requested);
+                    renderClockReleaseProbeLogged = true;
+                    LOGGER.info("[HI-MATRIX] FROZEN_RENDER_CLOCK_RELEASE requested={} applied={} resumed={}",
+                            requested, applied, Math.abs(applied - requested) < 0.0001F);
                 }
             }
         }
