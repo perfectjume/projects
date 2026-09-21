@@ -77,6 +77,7 @@ public final class RuntimeTestClient {
             if (entity instanceof LivingEntity living) {
                 aimAt(mc, living);
                 if (WindupTracker.shouldFreeze(living)) {
+                    long freezeElapsed = mc.level.getGameTime() - w.startGameTime;
                 if ("FREEZE".equals(scenario) && !directFreezeProbeLogged) {
                     int before = living.tickCount;
                     int externalBefore = MobAnimationProbe.count();
@@ -105,8 +106,8 @@ public final class RuntimeTestClient {
 
                 String freezeKey = scenario + ":" + id;
                 if (loggedFreeze.add(freezeKey)) {
-                    LOGGER.info("[HI-MATRIX] CLIENT_FREEZE_TRUE scenario={} id={} kind={} tickCount={}",
-                            scenario, id, w.kind, living.tickCount);
+                    LOGGER.info("[HI-MATRIX] CLIENT_FREEZE_TRUE scenario={} id={} kind={} tickCount={} elapsed={}",
+                            scenario, id, w.kind, living.tickCount, freezeElapsed);
                 }
                 int old = lastTickCount.getOrDefault(id, Integer.MIN_VALUE);
                 if (old == living.tickCount) {
