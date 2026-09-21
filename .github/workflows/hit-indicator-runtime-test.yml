@@ -25,11 +25,11 @@ jobs:
       - name: Checkout test branch
         uses: actions/checkout@v4
 
-      - name: Java 25
+      - name: Java 21 build toolchain
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: '21'
 
       - name: Install virtual display
         run: |
@@ -242,6 +242,17 @@ jobs:
 
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
           cp /tmp/hit_indicator-1.21.1-neoforge-v15.jar run/mods/
+
+      - name: Java 25 runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Confirm Java 25 runtime
+        run: |
+          java -version 2>&1 | tee java-runtime-version.txt
+          java -version 2>&1 | grep -q '25'
 
       - name: Generate real Minecraft world
         shell: bash
