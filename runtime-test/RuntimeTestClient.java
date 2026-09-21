@@ -1,5 +1,6 @@
 package com.example.examplemod;
 
+import com.misanthropy.hit_indicator.client.AnimationFreezeContext;
 import com.misanthropy.hit_indicator.client.CameraShake;
 import com.misanthropy.hit_indicator.client.WindupTracker;
 import com.misanthropy.hit_indicator.client.WindupTracker.Windup;
@@ -21,6 +22,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import org.slf4j.Logger;
+import dev.kosmx.playerAnim.core.impl.AnimationProcessor;
 
 @EventBusSubscriber(modid = RuntimeTestMod.MODID, value = Dist.CLIENT)
 public final class RuntimeTestClient {
@@ -39,6 +41,8 @@ public final class RuntimeTestClient {
     private static boolean cameraAppliedLogged;
     private static boolean directFreezeProbeLogged;
     private static boolean freezeReleaseProbeLogged;
+    private static boolean playerAnimatorFreezeProbeLogged;
+    private static boolean playerAnimatorReleaseProbeLogged;
     private static int freezeProbeEntityId = -1;
     private static Field cameraTicksField;
 
@@ -85,6 +89,20 @@ public final class RuntimeTestClient {
                             before, after, before == after, externalBefore, externalAfter, externalBefore == externalAfter);
                 }
 
+                if ("FREEZE".equals(scenario) && !playerAnimatorFreezeProbeLogged) {
+                    AnimationProcessor processor = new AnimationProcessor();
+                    AnimationFreezeContext.push(living);
+                    try {
+                        processor.setTickDelta(0.75F);
+                    } finally {
+                        AnimationFreezeContext.pop();
+                    }
+                    playerAnimatorFreezeProbeLogged = true;
+                    LOGGER.info("[HI-MATRIX] PLAYERANIM_INTERPOLATION_FREEZE requested=0.75 applied={} frozen={}",
+                            processor.hitindicatortest$getLastTickDelta(),
+                            processor.hitindicatortest$getLastTickDelta() == 0.0F);
+                }
+
                 String freezeKey = scenario + ":" + id;
                 if (loggedFreeze.add(freezeKey)) {
                     LOGGER.info("[HI-MATRIX] CLIENT_FREEZE_TRUE scenario={} id={} kind={} tickCount={}",
@@ -129,6 +147,20 @@ public final class RuntimeTestClient {
                 freezeReleaseProbeLogged = true;
                 LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_RELEASE_PROBE predicate={} released={} externalHeadBefore={} externalHeadAfter={} externalHeadResumed={}",
                         predicate, !predicate, externalBefore, externalAfter, externalAfter > externalBefore);
+
+                if (!playerAnimatorReleaseProbeLogged) {
+                    AnimationProcessor processor = new AnimationProcessor();
+                    AnimationFreezeContext.push(living);
+                    try {
+                        processor.setTickDelta(0.75F);
+                    } finally {
+                        AnimationFreezeContext.pop();
+                    }
+                    playerAnimatorReleaseProbeLogged = true;
+                    LOGGER.info("[HI-MATRIX] PLAYERANIM_INTERPOLATION_RELEASE requested=0.75 applied={} resumed={}",
+                            processor.hitindicatortest$getLastTickDelta(),
+                            Math.abs(processor.hitindicatortest$getLastTickDelta() - 0.75F) < 0.0001F);
+                }
             }
         }
 
