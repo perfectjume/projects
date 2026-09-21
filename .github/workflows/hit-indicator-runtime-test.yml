@@ -305,7 +305,7 @@ jobs:
           grep -q 'WindupTracker.shouldFreeze' /tmp/mob-freeze-v18.javap
           grep -q 'CallbackInfo.cancel' /tmp/mob-freeze-v18.javap
           grep -q 'value=\[class Lnet/minecraft/world/entity/Mob;\]' /tmp/mob-freeze-v18.javap
-          grep -q 'priority=2000' /tmp/mob-freeze-v18.javap
+          grep -q 'priority=500' /tmp/mob-freeze-v18.javap
           grep -q 'method=\["tick"\]' /tmp/mob-freeze-v18.javap
           grep -q 'value="HEAD"' /tmp/mob-freeze-v18.javap
           grep -q 'cancellable=true' /tmp/mob-freeze-v18.javap
