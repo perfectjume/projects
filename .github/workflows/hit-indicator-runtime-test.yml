@@ -10,6 +10,7 @@ on:
       - hit-indicator-v12-runtime-test
       - hit-indicator-v14-learned-predictor
       - hit-indicator-v15-persistent-learner
+      - hit-indicator-v16-universal-intercept
     paths:
       - '.github/workflows/hit-indicator-runtime-test.yml'
       - 'runtime-test/**'
@@ -230,17 +231,51 @@ jobs:
           grep -q 'PREDICT' /tmp/predictor-v15.javap
           python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v15.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); assert m.get('client') == [], m; print('V15_NO_FREEZE_MIXIN_PASS')"
 
+          # v16: deterministic fixed-delay interception, no learned predictor.
+          mkdir -p /tmp/v16-attack/com/misanthropy/hit_indicator/server /tmp/v16-patcher-classes
+          unzip -p /tmp/hit_indicator-1.21.1-neoforge-v15.jar \
+            com/misanthropy/hit_indicator/server/AttackInterceptor.class \
+            > /tmp/v16-attack/com/misanthropy/hit_indicator/server/AttackInterceptor.class
+
+          javac \
+            --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
+            --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
+            -d /tmp/v16-patcher-classes \
+            ../runtime-test/PatchUniversalInterceptV16.java
+
+          java \
+            --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
+            --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
+            -cp /tmp/v16-patcher-classes \
+            PatchUniversalInterceptV16 \
+            /tmp/v16-attack/com/misanthropy/hit_indicator/server/AttackInterceptor.class
+
+          python ../runtime-test/PackageV16.py \
+            /tmp/hit_indicator-1.21.1-neoforge-v15.jar \
+            /tmp/v16-attack/com/misanthropy/hit_indicator/server/AttackInterceptor.class \
+            /tmp/hit_indicator-1.21.1-neoforge-v16.jar
+
+          unzip -t /tmp/hit_indicator-1.21.1-neoforge-v16.jar
+          javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v16.jar -c -p \
+            com.misanthropy.hit_indicator.server.AttackInterceptor > /tmp/attack-v16.javap
+          ! grep -q 'LearnedAttackPredictor' /tmp/attack-v16.javap
+          grep -q 'HitIndicatorNetwork.sendWindup' /tmp/attack-v16.javap
+          grep -q 'deliverCaptured' /tmp/attack-v16.javap
+          python -c "import zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v16.jar'); bad=[n for n in z.namelist() if 'LearnedAttackPredictor' in n]; assert not bad,bad; print('V16_NO_LEARNER_CLASSES_PASS')"
+          python -c "import json,zipfile; z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v16.jar'); m=json.loads(z.read('hit_indicator.mixins.json')); assert m.get('client') == [], m; print('V16_NO_FREEZE_MIXIN_PASS')"
+
+
           rm -f src/main/java/com/misanthropy/hit_indicator/server/LearnedAttackPredictor.java
           rm -f build/classes/java/main/com/misanthropy/hit_indicator/server/LearnedAttackPredictor*.class
 
           # Subsequent Gradle run tasks may recompile RuntimeTestMod. Point its
-          # compileOnly dependency at the final v14 jar so LearnedAttackPredictor
-          # resolves without creating a split runtime package.
-          cp /tmp/hit_indicator-1.21.1-neoforge-v15.jar libs/
-          sed -i 's/hit_indicator-1.21.1-neoforge-v5.jar/hit_indicator-1.21.1-neoforge-v15.jar/g' build.gradle
+          # compileOnly/runtime now point at the final v16 universal binary.
+          # The predictor source/classes are compiler-only intermediates and are removed below.
+          cp /tmp/hit_indicator-1.21.1-neoforge-v16.jar libs/
+          sed -i 's/hit_indicator-1.21.1-neoforge-v5.jar/hit_indicator-1.21.1-neoforge-v16.jar/g' build.gradle
 
           rm -f run/mods/hit_indicator-1.21.1-neoforge-v5.jar
-          cp /tmp/hit_indicator-1.21.1-neoforge-v15.jar run/mods/
+          cp /tmp/hit_indicator-1.21.1-neoforge-v16.jar run/mods/
 
       - name: Generate real Minecraft world
         shell: bash
@@ -370,7 +405,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -q '\[HI-MATRIX\] SERVER_ALL_SCENARIOS_PASS' client-latest.log
-          for scenario in MELEE CANCEL FREEZE LUNGE DODGE SLAM SURE PARRY WHIFF RANGED CROWD LEARNED; do
+          for scenario in MELEE CANCEL FREEZE LUNGE DODGE SLAM SURE PARRY WHIFF RANGED CROWD UNIVERSAL_REPLAY; do
             grep -q "\\[HI-MATRIX\\] SCENARIO_PASS $scenario" client-latest.log
           done
           grep -q '\[HI-MATRIX\] CLIENT_WINDUP scenario=MELEE .* kind=MELEE' client-latest.log
@@ -399,10 +434,10 @@ jobs:
           grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=LUNGE' client-latest.log
           grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=SLAM' client-latest.log
           grep -q '\[HI-MATRIX\] API_DELIVERING_HEAVY kind=SURE_HIT' client-latest.log
-          grep -q '\[HI-MATRIX\] LEARNED_BEFORE_FOURTH predictedEver=true activeNow=true' client-latest.log
-          grep -q '\[HI-LEARN\] PREDICT' client-latest.log
-          grep -q '\[HI-LEARN\] PREDICTION_MATCH' client-latest.log
-          grep -q '\[HI-LEARN\] DIRECT_REPLAY .* result=true' client-latest.log
+          grep -q '\[HI-MATRIX\] UNIVERSAL_TRIGGER .* pending=true .* ticksLeft=10' client-latest.log
+          grep -q '\[HI-MATRIX\] UNIVERSAL_DELIVERED dealt=7.0' client-latest.log
+          grep -q '\[HI-MATRIX\] SCENARIO_PASS UNIVERSAL_REPLAY .* UNIVERSAL_CAPTURED_DAMAGE_DELAYED_AND_REPLAYED' client-latest.log
+          ! grep -q '\[HI-LEARN\]' client-latest.log
           ! grep -q '\[HI-MATRIX\] FAIL' client-latest.log
           ! grep -q 'NoSuchFieldError' client-latest.log
           ! grep -q 'AbstractMethodError' client-latest.log
@@ -413,32 +448,7 @@ jobs:
           ! grep -Eq 'NoSuchMethodError|NoClassDefFoundError|ClassNotFoundException|IncompatibleClassChangeError|VerifyError' server-latest.log
           ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' client-latest.log
           ! grep -Eq '\[[^]]+/(WARN|ERROR|FATAL)\] \[com\.misanthropy\.hit_indicator' server-latest.log
-          test -f mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json
-          python -c "import json; p='mdk/run/saves/RuntimeTest/hit_indicator_learned_attacks.json'; d=json.load(open(p,'r',encoding='utf-8')); z=d.get('profiles',{}).get('minecraft:zombie',{}); assert z.get('confirmedHits',0)>=4,z; assert len(z.get('samples',[]))>=40,z; assert len(z.get('intervals',[]))>=2,z; print('LEARNED_PROFILE_PERSISTENCE_PASS',z.get('confirmedHits'),len(z.get('samples',[])),len(z.get('intervals',[])))"
-
-          cd mdk
-          rm -f run/logs/latest.log
-          export DISPLAY=:99
-          setsid ./gradlew --no-daemon runClient > ../reload-console.log 2>&1 &
-          RELOAD_PID=$!
-          RELOAD_OK=0
-          for i in $(seq 1 180); do
-            if grep -q '\[HI-LEARN\] LOAD profiles=1' run/logs/latest.log 2>/dev/null; then
-              RELOAD_OK=1
-              break
-            fi
-            if ! kill -0 "$RELOAD_PID" 2>/dev/null; then
-              break
-            fi
-            sleep 1
-          done
-          cp run/logs/latest.log ../reload-latest.log 2>/dev/null || true
-          kill -- -"$RELOAD_PID" 2>/dev/null || true
-          sleep 3
-          cd ..
-          test "$RELOAD_OK" -eq 1
-          grep -q '\[HI-LEARN\] LOAD profiles=1' reload-latest.log
-          echo 'LEARNED_PROFILE_RELOAD_PASS' >> runtime-summary.txt
+          echo 'UNIVERSAL_REPLAY_PASS' >> runtime-summary.txt
           echo 'FULL_RUNTIME_MATRIX_PASS' >> runtime-summary.txt
           echo 'GROUND_PARTICLE_PARSE_PASS' >> runtime-summary.txt
 
@@ -466,6 +476,7 @@ jobs:
             /tmp/hit_indicator-1.21.1-neoforge-v6.jar
             /tmp/hit_indicator-1.21.1-neoforge-v15.jar
             /tmp/attack-v15.javap
+            /tmp/attack-v16.javap
             /tmp/predictor-v15.javap
             /tmp/renderer-v12.javap
             /tmp/windup-v4.javap
