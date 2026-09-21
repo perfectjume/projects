@@ -75,12 +75,14 @@ public final class RuntimeTestClient {
                 if (WindupTracker.shouldFreeze(living)) {
                 if ("FREEZE".equals(scenario) && !directFreezeProbeLogged) {
                     int before = living.tickCount;
+                    int externalBefore = MobAnimationProbe.count();
                     living.tick();
                     int after = living.tickCount;
+                    int externalAfter = MobAnimationProbe.count();
                     directFreezeProbeLogged = true;
                     freezeProbeEntityId = id;
-                    LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_DIRECT_PROBE before={} after={} tickCanceled={}",
-                            before, after, before == after);
+                    LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_DIRECT_PROBE before={} after={} tickCanceled={} externalHeadBefore={} externalHeadAfter={} externalHeadBlocked={}",
+                            before, after, before == after, externalBefore, externalAfter, externalBefore == externalAfter);
                 }
 
                 String freezeKey = scenario + ":" + id;
@@ -121,9 +123,12 @@ public final class RuntimeTestClient {
             Entity entity = mc.level.getEntity(freezeProbeEntityId);
             if (entity instanceof LivingEntity living) {
                 boolean predicate = WindupTracker.shouldFreeze(living);
+                int externalBefore = MobAnimationProbe.count();
+                living.tick();
+                int externalAfter = MobAnimationProbe.count();
                 freezeReleaseProbeLogged = true;
-                LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_RELEASE_PROBE predicate={} released={}",
-                        predicate, !predicate);
+                LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_RELEASE_PROBE predicate={} released={} externalHeadBefore={} externalHeadAfter={} externalHeadResumed={}",
+                        predicate, !predicate, externalBefore, externalAfter, externalAfter > externalBefore);
             }
         }
 
