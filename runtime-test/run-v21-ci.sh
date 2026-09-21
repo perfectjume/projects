@@ -541,7 +541,10 @@ for scenario in MELEE CANCEL FREEZE LUNGE DODGE SLAM SURE PARRY WHIFF RANGED CRO
 done
 grep -q '\[HI-MATRIX\] CLIENT_TIME_STOP_DIRECT_PROBE .*tickCanceled=true .*maintenanceStable=true .*externalHeadBlocked=true' client-latest.log
 grep -q '\[HI-MATRIX\] CLIENT_TIME_STOP_RELEASE_PROBE predicate=false released=true tickResumed=true .*externalHeadResumed=true' client-latest.log
-grep -Eq '\[HI-MATRIX\] CLIENT_FREEZE_TRUE scenario=FREEZE .*kind=MELEE .*elapsed=[01]grep -q '\[HI-MATRIX\] UNIVERSAL_TRIGGER .*pending=true .*ticksLeft=10' client-latest.log
+grep -Eq '\[HI-MATRIX\] CLIENT_FREEZE_TRUE scenario=FREEZE .*kind=MELEE .*elapsed=[01]$' client-latest.log
+grep -q '\[HI-MATRIX\] FROZEN_RENDER_CLOCK .*stable=true' client-latest.log
+grep -q '\[HI-MATRIX\] FROZEN_RENDER_CLOCK_RELEASE .*resumed=true' client-latest.log
+grep -q '\[HI-MATRIX\] UNIVERSAL_TRIGGER .*pending=true .*ticksLeft=10' client-latest.log
 grep -q '\[HI-MATRIX\] UNIVERSAL_DELIVERED dealt=7.0' client-latest.log
 ! grep -q '\[HI-MATRIX\] FAIL' client-latest.log
 ! grep -Eq 'NoSuchMethodError|NoClassDefFoundError|ClassNotFoundException|IncompatibleClassChangeError|VerifyError|InvalidMixinException' client-latest.log
@@ -551,6 +554,7 @@ grep -q '\[HI-MATRIX\] UNIVERSAL_DELIVERED dealt=7.0' client-latest.log
 echo "FULL_RUNTIME_MATRIX_PASS" >> runtime-summary.txt
 echo "STABLE_WORLD_TIME_STOP_PASS" >> runtime-summary.txt
 echo "STABLE_RENDER_CLOCK_PASS" >> runtime-summary.txt
+echo "IMMEDIATE_FREEZE_NO_2TICK_DELAY_PASS" >> runtime-summary.txt
 
 python3 - <<'PY'
 from pathlib import Path
@@ -563,43 +567,6 @@ paths=[
     Path('/tmp/levelrenderer-time-stop-v21.javap'),
     Path('/tmp/frozen-maintenance-v21.javap'),
     Path('/tmp/frozen-render-clock-v21.javap'),
-    Path('client-latest.log'),
-    Path('server-latest.log'),
-    Path('runtime-summary.txt'),
-    Path('filtered-runtime.log'),
-]
-with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
-    for p in paths:
-        if p.exists():
-            z.write(p, p.name)
-    shots=Path('screenshots')
-    if shots.exists():
-        for p in shots.glob('*.png'):
-            z.write(p, 'screenshots/'+p.name)
-print(out)
-PY
- client-latest.log
-grep -q '\[HI-MATRIX\] FROZEN_RENDER_CLOCK .*stable=true' client-latest.log
-grep -q '\[HI-MATRIX\] FROZEN_RENDER_CLOCK_RELEASE .*resumed=true' client-latest.log
-grep -q '\[HI-MATRIX\] UNIVERSAL_TRIGGER .*pending=true .*ticksLeft=10' client-latest.log
-grep -q '\[HI-MATRIX\] UNIVERSAL_DELIVERED dealt=7.0' client-latest.log
-! grep -q '\[HI-MATRIX\] FAIL' client-latest.log
-! grep -Eq 'NoSuchMethodError|NoClassDefFoundError|ClassNotFoundException|IncompatibleClassChangeError|VerifyError|InvalidMixinException' client-latest.log
-! grep -Eq 'NoSuchMethodError|NoClassDefFoundError|ClassNotFoundException|IncompatibleClassChangeError|VerifyError|InvalidMixinException' server-latest.log
-)
-
-echo "FULL_RUNTIME_MATRIX_PASS" >> runtime-summary.txt
-echo "BETTERCOMBAT_PLAYERANIM_FREEZE_PASS" >> runtime-summary.txt
-echo "IMMEDIATE_FREEZE_NO_2TICK_DELAY_PASS" >> runtime-summary.txt
-
-python3 - <<'PY'
-from pathlib import Path
-import zipfile
-out=Path('/tmp/hit-indicator-v20-evidence.zip')
-paths=[
-    Path('/tmp/hit_indicator-1.21.1-neoforge-v20.jar'),
-    Path('/tmp/windup-v20.javap'),
-    Path('/tmp/playeranim-freeze-v19.javap'),
     Path('client-latest.log'),
     Path('server-latest.log'),
     Path('runtime-summary.txt'),
