@@ -120,9 +120,7 @@ public final class RuntimeTestMod {
         actionStarted = false;
         done = false;
         currentScenario = "WAITING";
-        learnedAttackCount = 0;
-        learnedPredictedBeforeFourth = false;
-        learnedFourthHealthBefore = -1.0F;
+        universalReplayHealthBefore = -1.0F;
         AttackInterceptor.setDodgeCheck(p -> false);
         configureBase();
         LOGGER.info("[HI-MATRIX] PLAYER_LOGGED_IN tick={} health={}", loginTick, sp.getHealth());
