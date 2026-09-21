@@ -1,0 +1,65 @@
+name: Port7 NeoForge runtime bundle
+
+on:
+  push:
+    branches:
+      - port7-runtime-bundle
+    paths:
+      - '.github/workflows/port7-runtime-bundle.yml'
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build exact NeoForge 21.1.249 server runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/port7-server
+          curl -fL --retry 3 -o /tmp/neoforge-installer.jar \
+            https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.249/neoforge-21.1.249-installer.jar
+          sha256sum /tmp/neoforge-installer.jar
+          java -jar /tmp/neoforge-installer.jar --install-server /tmp/port7-server --server-starter
+          printf 'eula=true\n' > /tmp/port7-server/eula.txt
+          printf 'online-mode=false\nlevel-name=world\nview-distance=4\nsimulation-distance=4\n' > /tmp/port7-server/server.properties
+          tar -C /tmp -czf /tmp/neoforge-1.21.1-21.1.249-server-runtime.tar.gz port7-server
+          sha256sum /tmp/neoforge-1.21.1-21.1.249-server-runtime.tar.gz
+      - name: Attempt headless client install
+        shell: bash
+        run: |
+          set -u
+          mkdir -p /tmp/port7-client
+          printf '{"profiles":{},"settings":{},"version":3}\n' > /tmp/port7-client/launcher_profiles.json
+          java -jar /tmp/neoforge-installer.jar --install-client /tmp/port7-client > /tmp/client-install.log 2>&1
+          code=$?
+          echo "client_install_exit=$code"
+          cat /tmp/client-install.log
+          find /tmp/port7-client -maxdepth 5 -type f -printf '%P\t%s\n' | sort | head -300
+          if [ -d /tmp/port7-client/versions ]; then
+            tar -C /tmp -czf /tmp/neoforge-1.21.1-21.1.249-client-install.tar.gz port7-client
+          fi
+          exit 0
+      - name: Upload server runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: neoforge-1.21.1-21.1.249-server-runtime
+          path: /tmp/neoforge-1.21.1-21.1.249-server-runtime.tar.gz
+          compression-level: 0
+      - name: Upload client install
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: neoforge-1.21.1-21.1.249-client-install
+          path: |
+            /tmp/neoforge-1.21.1-21.1.249-client-install.tar.gz
+            /tmp/client-install.log
+          if-no-files-found: warn
+          compression-level: 0
