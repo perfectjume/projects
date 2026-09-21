@@ -39,9 +39,12 @@ public final class RuntimeTestClient {
     private static boolean cameraStartedLogged;
     private static boolean cameraAppliedLogged;
     private static boolean directFreezeProbeLogged;
-    private static boolean freezeReleaseProbeLogged;
     private static boolean renderClockFreezeProbeLogged;
-    private static boolean renderClockReleaseProbeLogged;
+    private static boolean releaseBridgeObserved;
+    private static boolean releaseResumeLogged;
+    private static long releaseBridgeGameTime = Long.MIN_VALUE;
+    private static int releaseBridgeTickCount = Integer.MIN_VALUE;
+    private static int releaseBridgeExternalCount = Integer.MIN_VALUE;
     private static int freezeProbeEntityId = -1;
     private static Field cameraTicksField;
 
@@ -146,6 +149,47 @@ public final class RuntimeTestClient {
                 }
                 lastTickCount.put(id, living.tickCount);
                 }
+
+                if ("FREEZE".equals(scenario)
+                        && directFreezeProbeLogged
+                        && !WindupTracker.shouldFreeze(living)) {
+                    if (!releaseBridgeObserved && FrozenRenderClock.isReleaseBridge(living)) {
+                        float frozen = FrozenRenderClock.frozenPartial(living);
+                        float earlyRequested = 0.05F;
+                        float laterRequested = 0.40F;
+                        float early = FrozenRenderClock.partialFor(living, earlyRequested);
+                        float later = FrozenRenderClock.partialFor(living, laterRequested);
+                        float expectedEarly = Math.min(1.0F, frozen + earlyRequested);
+                        float expectedLater = Math.min(1.0F, frozen + laterRequested);
+                        boolean continuous =
+                                !Float.isNaN(frozen)
+                                && Math.abs(early - expectedEarly) < 0.0001F
+                                && Math.abs(later - expectedLater) < 0.0001F
+                                && early + 0.0001F >= frozen
+                                && later + 0.0001F >= early;
+
+                        releaseBridgeObserved = true;
+                        releaseBridgeGameTime = mc.level.getGameTime();
+                        releaseBridgeTickCount = living.tickCount;
+                        releaseBridgeExternalCount = MobAnimationProbe.count();
+
+                        LOGGER.info("[HI-MATRIX] CONTINUOUS_RELEASE_BRIDGE frozen={} early={} later={} continuous={} tickHeld={} externalCount={}",
+                                frozen, early, later, continuous, living.tickCount, releaseBridgeExternalCount);
+                    } else if (releaseBridgeObserved
+                            && !releaseResumeLogged
+                            && mc.level.getGameTime() > releaseBridgeGameTime) {
+                        float requested = 0.31F;
+                        float applied = FrozenRenderClock.partialFor(living, requested);
+                        boolean bridgeCleared = !FrozenRenderClock.isReleaseBridge(living);
+                        boolean tickResumed = living.tickCount > releaseBridgeTickCount;
+                        boolean externalResumed = MobAnimationProbe.count() > releaseBridgeExternalCount;
+                        boolean liveClock = Math.abs(applied - requested) < 0.0001F;
+
+                        releaseResumeLogged = true;
+                        LOGGER.info("[HI-MATRIX] CONTINUOUS_RELEASE_RESUME bridgeCleared={} tickResumed={} externalResumed={} requested={} applied={} liveClock={}",
+                                bridgeCleared, tickResumed, externalResumed, requested, applied, liveClock);
+                    }
+                }
             }
         }
 
@@ -155,35 +199,6 @@ public final class RuntimeTestClient {
                 && !cancelClearedLogged) {
             cancelClearedLogged = true;
             LOGGER.info("[HI-MATRIX] CLIENT_CANCEL_CLEARED");
-        }
-
-        if ("FREEZE".equals(scenario)
-                && directFreezeProbeLogged
-                && hadActiveInScenario
-                && WindupTracker.active().isEmpty()
-                && !freezeReleaseProbeLogged
-                && freezeProbeEntityId >= 0) {
-            Entity entity = mc.level.getEntity(freezeProbeEntityId);
-            if (entity instanceof LivingEntity living) {
-                boolean predicate = WindupTracker.shouldFreeze(living);
-                int externalBefore = MobAnimationProbe.count();
-                int tickBefore = living.tickCount;
-                mc.level.tickNonPassenger(living);
-                int externalAfter = MobAnimationProbe.count();
-                int tickAfter = living.tickCount;
-                freezeReleaseProbeLogged = true;
-                LOGGER.info("[HI-MATRIX] CLIENT_TIME_STOP_RELEASE_PROBE predicate={} released={} tickResumed={} externalHeadBefore={} externalHeadAfter={} externalHeadResumed={}",
-                        predicate, !predicate, tickAfter > tickBefore,
-                        externalBefore, externalAfter, externalAfter > externalBefore);
-
-                if (!renderClockReleaseProbeLogged) {
-                    float requested = 0.61F;
-                    float applied = FrozenRenderClock.partialFor(living, requested);
-                    renderClockReleaseProbeLogged = true;
-                    LOGGER.info("[HI-MATRIX] FROZEN_RENDER_CLOCK_RELEASE requested={} applied={} resumed={}",
-                            requested, applied, Math.abs(applied - requested) < 0.0001F);
-                }
-            }
         }
 
         if ("SLAM".equals(scenario) && cameraTicksLeft() > 0 && !cameraStartedLogged) {
