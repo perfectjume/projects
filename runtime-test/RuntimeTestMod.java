@@ -73,6 +73,8 @@ public final class RuntimeTestMod {
     private static int learnedAttackCount;
     private static boolean learnedPredictedBeforeFourth;
     private static float learnedFourthHealthBefore = -1.0F;
+    private static boolean learnedDelivered;
+    private static boolean learnedFalsePositiveSeen;
     private static volatile String currentScenario = "WAITING";
 
     public RuntimeTestMod(IEventBus modBus, ModContainer container) {
@@ -126,6 +128,8 @@ public final class RuntimeTestMod {
         learnedAttackCount = 0;
         learnedPredictedBeforeFourth = false;
         learnedFourthHealthBefore = -1.0F;
+        learnedDelivered = false;
+        learnedFalsePositiveSeen = false;
         AttackInterceptor.setDodgeCheck(p -> false);
         configureBase();
         LOGGER.info("[HI-MATRIX] PLAYER_LOGGED_IN tick={} health={}", loginTick, sp.getHealth());
@@ -487,11 +491,34 @@ public final class RuntimeTestMod {
             }
         }
 
-        if (t > 90 && learnedFourthHealthBefore > 0.0F
+        if (!learnedDelivered && t > 90 && learnedFourthHealthBefore > 0.0F
                 && !AttackInterceptor.isWindingUp(z)
                 && player.getHealth() < learnedFourthHealthBefore) {
+            learnedDelivered = true;
+            player.teleportTo(BX + 8.5D, BY + 1.0D, BZ + 0.5D);
+            player.setDeltaMovement(0.0D, 0.0D, 0.0D);
+            LOGGER.info("[HI-MATRIX] LEARNED_FALSE_POSITIVE_WINDOW_START distance={} targetStillPlayer={}",
+                    z.distanceTo(player), z.getTarget() == player);
+        }
+
+        if (learnedDelivered && t < 135 && LearnedAttackPredictor.isPredictionActive(z)) {
+            learnedFalsePositiveSeen = true;
+            LOGGER.error("[HI-MATRIX] LEARNED_FALSE_POSITIVE_ACTIVE t={} distance={}", t, z.distanceTo(player));
+        }
+
+        if (learnedDelivered && t == 135) {
+            LOGGER.info("[HI-MATRIX] LEARNED_FALSE_POSITIVE_RESULT seen={} distance={} targetStillPlayer={}",
+                    learnedFalsePositiveSeen, z.distanceTo(player), z.getTarget() == player);
+            if (learnedFalsePositiveSeen) {
+                fail("learned predictor armed while target remained far outside learned melee state");
+                return;
+            }
+            if (z.getTarget() != player) {
+                fail("false-positive test lost target and became non-discriminating");
+                return;
+            }
             LearnedAttackPredictor.flush(player.getServer());
-            pass(now, "LEARNED_RING_ACTIVE_AT_HIT_DAMAGE_HELD_THEN_DELIVERED");
+            pass(now, "LEARNED_RING_SYNC_AND_FALSE_POSITIVE_REJECTION");
         }
     }
 
