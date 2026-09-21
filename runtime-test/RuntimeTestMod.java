@@ -75,6 +75,7 @@ public final class RuntimeTestMod {
     private static float learnedFourthHealthBefore = -1.0F;
     private static boolean learnedDelivered;
     private static boolean learnedFalsePositiveSeen;
+    private static int learnedAdaptHits;
     private static volatile String currentScenario = "WAITING";
 
     public RuntimeTestMod(IEventBus modBus, ModContainer container) {
@@ -130,6 +131,7 @@ public final class RuntimeTestMod {
         learnedFourthHealthBefore = -1.0F;
         learnedDelivered = false;
         learnedFalsePositiveSeen = false;
+        learnedAdaptHits = 0;
         AttackInterceptor.setDodgeCheck(p -> false);
         configureBase();
         LOGGER.info("[HI-MATRIX] PLAYER_LOGGED_IN tick={} health={}", loginTick, sp.getHealth());
@@ -169,7 +171,7 @@ public final class RuntimeTestMod {
                 case CROWD -> testCrowd(t, now);
                 case LEARNED -> testLearned(t, now);
             }
-            if (t > 180) fail("timeout scenario=" + s + " pending=" + pending());
+            if (t > (s == Scenario.LEARNED ? 280 : 180)) fail("timeout scenario=" + s + " pending=" + pending());
         } catch (Throwable error) {
             LOGGER.error("[HI-MATRIX] FAIL exception scenario={}", s, error);
             done = true;
@@ -517,8 +519,37 @@ public final class RuntimeTestMod {
                 fail("false-positive test lost target and became non-discriminating");
                 return;
             }
+            LOGGER.info("[HI-MATRIX] LEARNED_ROLLING_STRESS_START hits={} samples={}",
+                    LearnedAttackPredictor.confirmedHits(z), LearnedAttackPredictor.sampleCount(z));
+        }
+
+        // Stress the rolling caches with 50 newer samples at a different cadence.
+        // Directly exercising the learner here avoids adding artificial combat damage
+        // while still running the exact production training path.
+        if (learnedDelivered && t >= 138 && t <= 236 && (t & 1) == 0) {
+            LearnedAttackPredictor.prepareIncoming(z, player);
+            learnedAdaptHits++;
+        }
+
+        if (learnedDelivered && t == 238) {
+            int hits = LearnedAttackPredictor.confirmedHits(z);
+            int samples = LearnedAttackPredictor.sampleCount(z);
+            LOGGER.info("[HI-MATRIX] LEARNED_ROLLING_STRESS_RESULT added={} hits={} samples={}",
+                    learnedAdaptHits, hits, samples);
+            if (learnedAdaptHits != 50) {
+                fail("rolling stress did not add 50 newer hits; added=" + learnedAdaptHits);
+                return;
+            }
+            if (hits != 54) {
+                fail("rolling stress confirmed hit count unexpected; hits=" + hits);
+                return;
+            }
+            if (samples != 384) {
+                fail("rolling sample cache did not cap at 384; samples=" + samples);
+                return;
+            }
             LearnedAttackPredictor.flush(player.getServer());
-            pass(now, "LEARNED_RING_SYNC_AND_FALSE_POSITIVE_REJECTION");
+            pass(now, "LEARNED_SYNC_FALSE_POSITIVE_AND_ROLLING_CACHE_PASS");
         }
     }
 
