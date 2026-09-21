@@ -437,8 +437,8 @@ jobs:
           grep -q '\[HI-MATRIX\] CLIENT_WINDUP scenario=SURE .* kind=SURE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_WINDUP scenario=RANGED .* kind=RANGED' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=FREEZE kind=MELEE' client-latest.log
-          grep -q '\[HI-MATRIX\] CLIENT_MIXIN_DIRECT_PROBE .*canceled=true' client-latest.log
-          grep -q '\[HI-MATRIX\] CLIENT_MIXIN_RELEASE_PROBE .*resumed=true' client-latest.log
+          grep -q '\[HI-MATRIX\] CLIENT_MIXIN_DIRECT_PROBE .*tickCanceled=true .*callbackCanceled=true' client-latest.log
+          grep -q '\[HI-MATRIX\] CLIENT_MIXIN_RELEASE_PROBE predicate=false callbackCanceled=false released=true' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_FREEZE_TRUE scenario=FREEZE .*kind=MELEE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=LUNGE kind=LUNGE' client-latest.log
           grep -q '\[HI-MATRIX\] CLIENT_RENDER scenario=SLAM kind=SLAM' client-latest.log
