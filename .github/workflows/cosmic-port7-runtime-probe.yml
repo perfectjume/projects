@@ -1,0 +1,50 @@
+name: Cosmic Port7 runtime probe
+
+on:
+  push:
+    branches:
+      - cosmic-port7-runtime-test
+    paths:
+      - '.github/workflows/cosmic-port7-runtime-probe.yml'
+      - 'cosmic-port7-probe/**'
+  workflow_dispatch:
+
+jobs:
+  probe-original:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Download and inspect exact Cosmic 0.0.7.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://cdn.modrinth.com/data/Mv7E5lAP/versions/HhC4bL9S/Cosmic_Horizons_0.0.7.3-forge-1.20.1.jar'
+          curl -fL --retry 3 -o /tmp/cosmic-original.jar "$URL"
+          echo "=== SHA256 / SIZE ==="
+          sha256sum /tmp/cosmic-original.jar
+          stat -c '%s bytes' /tmp/cosmic-original.jar
+          unzip -t /tmp/cosmic-original.jar >/dev/null
+          echo "=== MANIFEST ==="
+          unzip -p /tmp/cosmic-original.jar META-INF/MANIFEST.MF 2>/dev/null || true
+          echo "=== MOD METADATA CANDIDATES ==="
+          for f in META-INF/mods.toml META-INF/neoforge.mods.toml fabric.mod.json META-INF/jarjar/metadata.json; do
+            echo "--- $f"
+            unzip -p /tmp/cosmic-original.jar "$f" 2>/dev/null || true
+          done
+          echo "=== SOUL/SHADE PATH HITS ==="
+          unzip -Z1 /tmp/cosmic-original.jar | grep -Ei '(^|/)(soul|shade)|net/soul/shade|jarjar|\.jar$' || true
+          echo "=== TOP-LEVEL PACKAGE COUNTS ==="
+          unzip -Z1 /tmp/cosmic-original.jar | awk -F/ 'NF>1{c[$1]++} END{for(k in c) print c[k],k}' | sort -nr | head -50
+          echo "=== CLASS CONSTANT-POOL REFERENCES TO SHADE ==="
+          rm -rf /tmp/cosmic-unpack && mkdir /tmp/cosmic-unpack
+          (cd /tmp/cosmic-unpack && unzip -q /tmp/cosmic-original.jar)
+          grep -aRIlE 'net/soul/shade|net\.soul\.shade|SoulShade|Soul Shade' /tmp/cosmic-unpack --include='*.class' | sed 's#/tmp/cosmic-unpack/##' | head -200 || true
+          echo "=== STRINGS AROUND SHADE REFERENCES ==="
+          find /tmp/cosmic-unpack -name '*.class' -print0 | xargs -0 strings | grep -Ei 'net/soul/shade|SoulShade|Soul Shade|shade' | sort -u | head -300 || true
+          echo "PROBE_COMPLETE"
