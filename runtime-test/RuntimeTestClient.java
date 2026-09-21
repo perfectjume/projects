@@ -6,7 +6,6 @@ import com.misanthropy.hit_indicator.client.WindupTracker.Windup;
 import com.mojang.logging.LogUtils;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -22,7 +21,6 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import org.slf4j.Logger;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @EventBusSubscriber(modid = RuntimeTestMod.MODID, value = Dist.CLIENT)
 public final class RuntimeTestClient {
@@ -43,7 +41,6 @@ public final class RuntimeTestClient {
     private static boolean freezeReleaseProbeLogged;
     private static int freezeProbeEntityId = -1;
     private static Field cameraTicksField;
-    private static Method freezeInjectionMethod;
 
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
@@ -80,11 +77,10 @@ public final class RuntimeTestClient {
                     int before = living.tickCount;
                     living.tick();
                     int after = living.tickCount;
-                    boolean callbackCanceled = probeFreezeCallback(living);
                     directFreezeProbeLogged = true;
                     freezeProbeEntityId = id;
-                    LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_DIRECT_PROBE before={} after={} tickCanceled={} callbackCanceled={}",
-                            before, after, before == after, callbackCanceled);
+                    LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_DIRECT_PROBE before={} after={} tickCanceled={}",
+                            before, after, before == after);
                 }
 
                 String freezeKey = scenario + ":" + id;
@@ -125,10 +121,9 @@ public final class RuntimeTestClient {
             Entity entity = mc.level.getEntity(freezeProbeEntityId);
             if (entity instanceof LivingEntity living) {
                 boolean predicate = WindupTracker.shouldFreeze(living);
-                boolean callbackCanceled = probeFreezeCallback(living);
                 freezeReleaseProbeLogged = true;
-                LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_RELEASE_PROBE predicate={} callbackCanceled={} released={}",
-                        predicate, callbackCanceled, !predicate && !callbackCanceled);
+                LOGGER.info("[HI-MATRIX] CLIENT_MIXIN_RELEASE_PROBE predicate={} released={}",
+                        predicate, !predicate);
             }
         }
 
@@ -171,33 +166,6 @@ public final class RuntimeTestClient {
         float pitch = (float)(-Math.toDegrees(Math.atan2(dy, horizontal)));
         mc.player.setYRot(yaw);
         mc.player.setXRot(pitch);
-    }
-
-    private static boolean probeFreezeCallback(LivingEntity living) {
-        try {
-            if (freezeInjectionMethod == null) {
-                freezeInjectionMethod = living.getClass().getMethod("hit_indicator$freezeWindup", CallbackInfo.class);
-                freezeInjectionMethod.setAccessible(true);
-            }
-            CallbackInfo ci = new CallbackInfo("tick", true);
-            freezeInjectionMethod.invoke(living, ci);
-            return ci.isCancelled();
-        } catch (NoSuchMethodException missingPublic) {
-            try {
-                freezeInjectionMethod = LivingEntity.class.getDeclaredMethod(
-                        "hit_indicator$freezeWindup", CallbackInfo.class);
-                freezeInjectionMethod.setAccessible(true);
-                CallbackInfo ci = new CallbackInfo("tick", true);
-                freezeInjectionMethod.invoke(living, ci);
-                return ci.isCancelled();
-            } catch (ReflectiveOperationException error) {
-                LOGGER.error("[HI-MATRIX] CLIENT_FREEZE_CALLBACK_PROBE_FAIL", error);
-                return false;
-            }
-        } catch (ReflectiveOperationException error) {
-            LOGGER.error("[HI-MATRIX] CLIENT_FREEZE_CALLBACK_PROBE_FAIL", error);
-            return false;
-        }
     }
 
     private static int cameraTicksLeft() {
