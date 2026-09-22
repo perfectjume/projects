@@ -244,7 +244,7 @@ public final class RuntimeTestClient {
                     && StasisDesaturationRenderer.diagnosticBeforeAlpha() >= 245
                     && beforeSpread > 10
                     && afterSpread >= 0
-                    && afterSpread <= Math.max(4, beforeSpread / 4);
+                    && afterSpread <= 2;
             LOGGER.info("[HI-MATRIX] STASIS_GRAYSCALE shaderReady={} targetReady={} beginCount={} passCount={} executed={} entityPixels={} beforeAlpha={} beforeSpread={} afterSpread={} pixelDesaturated={} rgb={}",
                     StasisDesaturationRenderer.shaderReady(),
                     StasisDesaturationRenderer.targetReady(),
