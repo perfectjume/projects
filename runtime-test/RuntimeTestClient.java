@@ -18,6 +18,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
@@ -43,6 +44,7 @@ public final class RuntimeTestClient {
     private static boolean renderClockFreezeProbeLogged;
     private static boolean stasisGrayscaleLogged;
     private static boolean stasisDiagnosticLogged;
+    private static boolean moddedStackLogged;
     private static boolean releasePredicateFalseLogged;
     private static boolean releaseBridgeObserved;
     private static boolean releaseResumeLogged;
@@ -58,6 +60,13 @@ public final class RuntimeTestClient {
         if (mc.level == null) return;
 
         String scenario = RuntimeTestMod.currentScenario();
+        if (!moddedStackLogged) {
+            moddedStackLogged = true;
+            LOGGER.info("[HI-MATRIX] MODDED_STACK_LOADED bettercombat={} playeranimator={} betterMobCombat={}",
+                    ModList.get().isLoaded("bettercombat"),
+                    ModList.get().isLoaded("playeranimator"),
+                    ModList.get().isLoaded("better_mob_combat_reimagined"));
+        }
         if (!scenario.equals(lastScenario)) {
             lastScenario = scenario;
             hadActiveInScenario = false;
