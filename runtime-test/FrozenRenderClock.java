@@ -5,6 +5,10 @@ import java.util.Map;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 
+/**
+ * Holds the render-side fractional clock while an entity is frozen and hands
+ * ownership of the Frozen -> Release transition to the client entity tick.
+ */
 public final class FrozenRenderClock {
     private record Sample(int tickCount, float partialTick) {}
     private record Frozen(long token, float partialTick) {}
@@ -52,9 +56,17 @@ public final class FrozenRenderClock {
             if (gameTime > release.bridgeGameTime) {
                 RELEASE.remove(id);
                 FROZEN.remove(id);
+                LAST_NORMAL.put(id, new Sample(entity.tickCount, originalPartialTick));
+                return originalPartialTick;
             }
-        } else {
-            FROZEN.remove(id);
+        }
+
+        Frozen frozen = FROZEN.get(id);
+        if (frozen != null) {
+            // Render can observe shouldFreeze=false before ClientLevel gets its
+            // next tickNonPassenger call. Keep the exact frozen fraction here;
+            // tick-side shouldHoldReleaseTick() owns Frozen -> Release.
+            return frozen.partialTick;
         }
 
         LAST_NORMAL.put(id, new Sample(entity.tickCount, originalPartialTick));
