@@ -216,12 +216,24 @@ public final class RuntimeTestClient {
                 && !stasisGrayscaleLogged
                 && StasisDesaturationRenderer.passCount() > 0) {
             stasisGrayscaleLogged = true;
-            LOGGER.info("[HI-MATRIX] STASIS_GRAYSCALE shaderReady={} stencilReady={} beginCount={} passCount={} executed={}",
+            int beforeSpread = StasisDesaturationRenderer.diagnosticBeforeSpread();
+            int afterSpread = StasisDesaturationRenderer.diagnosticAfterSpread();
+            boolean pixelDesaturated =
+                    StasisDesaturationRenderer.stencilPixelCount() > 0
+                    && beforeSpread > 10
+                    && afterSpread >= 0
+                    && afterSpread <= Math.max(4, beforeSpread / 4);
+            LOGGER.info("[HI-MATRIX] STASIS_GRAYSCALE shaderReady={} stencilReady={} beginCount={} passCount={} executed={} stencilPixels={} beforeSpread={} afterSpread={} pixelDesaturated={} rgb={}",
                     StasisDesaturationRenderer.shaderReady(),
                     StasisDesaturationRenderer.stencilReady(),
                     StasisDesaturationRenderer.beginCount(),
                     StasisDesaturationRenderer.passCount(),
-                    StasisDesaturationRenderer.passCount() > 0);
+                    StasisDesaturationRenderer.passCount() > 0,
+                    StasisDesaturationRenderer.stencilPixelCount(),
+                    beforeSpread,
+                    afterSpread,
+                    pixelDesaturated,
+                    StasisDesaturationRenderer.diagnosticRgb());
         }
 
         if ("CANCEL".equals(scenario)
