@@ -1,0 +1,167 @@
+package com.misanthropy.hit_indicator.client;
+
+import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.ShaderInstance;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.neoforged.neoforge.client.GlStateBackup;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
+
+public final class StasisDesaturationRenderer {
+    private static ShaderInstance shader;
+    private static int snapshotTexture = -1;
+    private static int snapshotWidth = -1;
+    private static int snapshotHeight = -1;
+
+    private static boolean active;
+    private static boolean stencilWasEnabled;
+    private static int oldTexture0;
+    private static final GlStateBackup GL_BACKUP = new GlStateBackup();
+
+    private StasisDesaturationRenderer() {}
+
+    public static void setShader(ShaderInstance loaded) {
+        shader = loaded;
+    }
+
+    public static boolean isVisualStasis(Entity entity) {
+        return entity instanceof LivingEntity living
+                && (WindupTracker.shouldFreeze(living) || FrozenRenderClock.isReleaseBridge(entity));
+    }
+
+    public static void begin(Entity entity, MultiBufferSource bufferSource) {
+        active = false;
+        if (!isVisualStasis(entity) || shader == null) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        RenderTarget main = mc.getMainRenderTarget();
+        if (!main.isStencilEnabled()) {
+            main.enableStencil();
+        }
+
+        flush(bufferSource);
+
+        RenderSystem.backupGlState(GL_BACKUP);
+        stencilWasEnabled = GL11.glIsEnabled(GL11.GL_STENCIL_TEST);
+        oldTexture0 = RenderSystem.getShaderTexture(0);
+
+        main.bindWrite(false);
+        RenderSystem.clearStencil(0);
+        RenderSystem.stencilMask(0xFF);
+        RenderSystem.clear(GL11.GL_STENCIL_BUFFER_BIT, Minecraft.ON_OSX);
+
+        GL11.glEnable(GL11.GL_STENCIL_TEST);
+        RenderSystem.stencilMask(0xFF);
+        RenderSystem.stencilFunc(GL11.GL_ALWAYS, 1, 0xFF);
+        RenderSystem.stencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
+        active = true;
+    }
+
+    public static void end(Entity entity, MultiBufferSource bufferSource) {
+        if (!active) {
+            return;
+        }
+
+        active = false;
+        Minecraft mc = Minecraft.getInstance();
+        RenderTarget main = mc.getMainRenderTarget();
+
+        // Entity vertices are normally batched. Flush them while stencil writes
+        // are still active so every ordinary entity RenderType contributes to
+        // the mask without needing renderer-specific compatibility.
+        GL11.glEnable(GL11.GL_STENCIL_TEST);
+        RenderSystem.stencilMask(0xFF);
+        RenderSystem.stencilFunc(GL11.GL_ALWAYS, 1, 0xFF);
+        RenderSystem.stencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
+        flush(bufferSource);
+
+        ensureSnapshot(main.width, main.height);
+        main.bindWrite(false);
+
+        // Snapshot the already-rendered color buffer. This captures whatever
+        // vanilla/modded renderer produced, including PlayerAnimator/GeckoLib.
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshotTexture);
+        GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, main.width, main.height);
+
+        // Replace only stencil-marked pixels with a grayscale sample from the
+        // snapshot. No entity model/texture knowledge is required here.
+        RenderSystem.stencilMask(0x00);
+        RenderSystem.stencilFunc(GL11.GL_EQUAL, 1, 0xFF);
+        RenderSystem.stencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+
+        RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
+        RenderSystem.disableBlend();
+        RenderSystem.disableCull();
+
+        RenderSystem.setShader(() -> shader);
+        RenderSystem.setShaderTexture(0, snapshotTexture);
+
+        BufferBuilder builder = Tesselator.getInstance().begin(
+                VertexFormat.Mode.QUADS,
+                DefaultVertexFormat.POSITION_TEX);
+        builder.addVertex(-1.0F, -1.0F, 0.0F).setUv(0.0F, 0.0F);
+        builder.addVertex( 1.0F, -1.0F, 0.0F).setUv(1.0F, 0.0F);
+        builder.addVertex( 1.0F,  1.0F, 0.0F).setUv(1.0F, 1.0F);
+        builder.addVertex(-1.0F,  1.0F, 0.0F).setUv(0.0F, 1.0F);
+        BufferUploader.drawWithShader(builder.buildOrThrow());
+
+        RenderSystem.setShaderTexture(0, oldTexture0);
+        RenderSystem.restoreGlState(GL_BACKUP);
+
+        RenderSystem.clearStencil(0);
+        RenderSystem.stencilMask(0xFF);
+        RenderSystem.clear(GL11.GL_STENCIL_BUFFER_BIT, Minecraft.ON_OSX);
+        if (!stencilWasEnabled) {
+            GL11.glDisable(GL11.GL_STENCIL_TEST);
+        }
+
+        main.bindWrite(false);
+    }
+
+    private static void flush(MultiBufferSource bufferSource) {
+        if (bufferSource instanceof MultiBufferSource.BufferSource buffers) {
+            buffers.endBatch();
+        }
+    }
+
+    private static void ensureSnapshot(int width, int height) {
+        if (snapshotTexture != -1 && snapshotWidth == width && snapshotHeight == height) {
+            return;
+        }
+
+        if (snapshotTexture == -1) {
+            snapshotTexture = GL11.glGenTextures();
+        }
+
+        snapshotWidth = width;
+        snapshotHeight = height;
+
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshotTexture);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexImage2D(
+                GL11.GL_TEXTURE_2D,
+                0,
+                GL11.GL_RGBA8,
+                width,
+                height,
+                0,
+                GL11.GL_RGBA,
+                GL11.GL_UNSIGNED_BYTE,
+                0L);
+    }
+}
