@@ -150,6 +150,49 @@ public final class EmfPoseFreeze {
         }
     }
 
+    public static boolean partStateRoundTripForTest() {
+        ModelPart part = new ModelPart(java.util.List.of(), java.util.Map.of());
+        part.x = 1.25F;
+        part.y = -2.5F;
+        part.z = 3.75F;
+        part.xRot = 0.11F;
+        part.yRot = -0.22F;
+        part.zRot = 0.33F;
+        part.xScale = 0.8F;
+        part.yScale = 1.2F;
+        part.zScale = 0.95F;
+        part.visible = true;
+        part.skipDraw = false;
+
+        PartState saved = PartState.capture(part);
+
+        part.x = 99.0F;
+        part.y = 99.0F;
+        part.z = 99.0F;
+        part.xRot = 9.0F;
+        part.yRot = 9.0F;
+        part.zRot = 9.0F;
+        part.xScale = 0.01F;
+        part.yScale = 0.01F;
+        part.zScale = 0.01F;
+        part.visible = false;
+        part.skipDraw = true;
+
+        saved.restore(part);
+
+        return part.x == 1.25F
+                && part.y == -2.5F
+                && part.z == 3.75F
+                && part.xRot == 0.11F
+                && part.yRot == -0.22F
+                && part.zRot == 0.33F
+                && part.xScale == 0.8F
+                && part.yScale == 1.2F
+                && part.zScale == 0.95F
+                && part.visible
+                && !part.skipDraw;
+    }
+
     public static int captures() { return captures; }
     public static int restores() { return restores; }
     public static int clears() { return clears; }
