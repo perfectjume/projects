@@ -15,6 +15,7 @@ public final class StasisDesaturationClientEvents {
 
     @SubscribeEvent
     public static void onRegisterShaders(RegisterShadersEvent event) throws IOException {
+        EmfStasisCompat.registerIfPresent();
         event.registerShader(
                 new ShaderInstance(
                         event.getResourceProvider(),
