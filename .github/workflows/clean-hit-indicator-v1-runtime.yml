@@ -1,0 +1,182 @@
+name: Clean Hit Indicator v1 runtime
+
+on:
+  push:
+    branches:
+      - clean-hit-indicator-v1
+    paths:
+      - 'clean-hit-indicator/**'
+      - '.github/workflows/clean-hit-indicator-v1-runtime.yml'
+  workflow_dispatch:
+
+jobs:
+  literal-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.2.1'
+
+      - name: Build clean mod
+        working-directory: clean-hit-indicator
+        run: gradle --no-daemon build
+
+      - name: Prepare literal NeoForge runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          CLEAN_JAR="$(find clean-hit-indicator/build/libs -maxdepth 1 -name '*.jar' | head -1)"
+          test -f "$CLEAN_JAR"
+
+          git clone --depth 1 https://github.com/NeoForgeMDKs/MDK-1.21.1-ModDevGradle.git runtime-mdk
+          cd runtime-mdk
+
+          sed -i 's/^neo_version=.*/neo_version=21.1.251/' gradle.properties
+          sed -i 's/^mod_id=.*/mod_id=soulshade_hit_indicator_runtime_test/' gradle.properties
+          sed -i 's/^mod_name=.*/mod_name=SoulShade Hit Indicator Runtime Test/' gradle.properties
+          sed -i 's/^mod_version=.*/mod_version=1.0.0/' gradle.properties
+          sed -i 's/^mod_group_id=.*/mod_group_id=com.soulshade.runtime/' gradle.properties
+
+          rm -rf src/main/java/com/example/examplemod
+          mkdir -p src/main/java/com/soulshade/runtime libs run/mods
+          cp ../clean-hit-indicator/runtime-test/CleanRuntimeTestMod.java src/main/java/com/soulshade/runtime/
+          cp ../clean-hit-indicator/runtime-test/CleanRuntimeTestClient.java src/main/java/com/soulshade/runtime/
+          cp "../$CLEAN_JAR" libs/clean-hit-indicator.jar
+          cp "../$CLEAN_JAR" run/mods/clean-hit-indicator.jar
+
+          sed -i '/dependencies {/a\    compileOnly files("libs/clean-hit-indicator.jar")' build.gradle
+          sed -i "/^[[:space:]]*client()$/a\            programArguments.addAll '--quickPlaySingleplayer', 'CleanTest', '--width', '854', '--height', '480'" build.gradle
+
+          ./gradlew --no-daemon compileJava
+
+      - name: Generate test world
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd runtime-mdk
+          echo 'eula=true' > run/eula.txt
+          cat > run/server.properties <<'EOF'
+          level-name=world
+          level-type=minecraft:flat
+          online-mode=false
+          difficulty=normal
+          gamemode=survival
+          spawn-monsters=false
+          view-distance=4
+          simulation-distance=4
+          EOF
+
+          setsid ./gradlew --no-daemon runServer > ../clean-server-console.log 2>&1 &
+          PID=$!
+          READY=0
+          for i in $(seq 1 180); do
+            if grep -qE 'Done \(.*\)!|For help, type' run/logs/latest.log 2>/dev/null; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          cp run/logs/latest.log ../clean-dedicated-server.log 2>/dev/null || true
+          kill -- -"$PID" 2>/dev/null || true
+          sleep 2
+
+          test "$READY" -eq 1
+          test -f run/world/level.dat
+          rm -rf run/saves/CleanTest
+          mkdir -p run/saves/CleanTest
+          cp -a run/world/. run/saves/CleanTest/
+
+      - name: Run literal client matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox xdotool imagemagick libgl1-mesa-dri mesa-utils
+
+          cd runtime-mdk
+          cat > run/options.txt <<'EOF'
+          version:3955
+          onboardAccessibility:false
+          EOF
+
+          mkdir -p ../clean-screenshots
+          Xvfb :99 -screen 0 1280x720x24 -ac +extension GLX +render -noreset > ../clean-xvfb.log 2>&1 &
+          export DISPLAY=:99
+          openbox > ../clean-openbox.log 2>&1 &
+          sleep 2
+
+          setsid ./gradlew --no-daemon runClient > ../clean-client-console.log 2>&1 &
+          PID=$!
+
+          RESULT=0
+          SCREENSHOT=0
+          for i in $(seq 1 300); do
+            if grep -q '\[CLEAN-HI\] CLIENT_VISUAL_PROGRESS' run/logs/latest.log 2>/dev/null && [ "$SCREENSHOT" -eq 0 ]; then
+              import -window root ../clean-screenshots/stasis.png 2>/dev/null || true
+              SCREENSHOT=1
+            fi
+
+            if grep -q '\[CLEAN-HI\] SERVER_CLEAN_PASS' run/logs/latest.log 2>/dev/null \
+                && grep -q '\[CLEAN-HI\] CLIENT_CLEAN_PASS' run/logs/latest.log 2>/dev/null; then
+              RESULT=1
+              sleep 3
+              break
+            fi
+
+            if grep -q '\[CLEAN-HI\] FAIL' run/logs/latest.log 2>/dev/null; then
+              break
+            fi
+            if ! kill -0 "$PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          import -window root ../clean-screenshots/final.png 2>/dev/null || true
+          cp run/logs/latest.log ../clean-client-latest.log 2>/dev/null || true
+          kill -- -"$PID" 2>/dev/null || true
+          sleep 2
+
+          grep -E '\[CLEAN-HI\]|soulshade_hit_indicator|ERROR|FATAL|InvalidMixinException|NoClassDefFoundError' ../clean-client-latest.log > ../clean-runtime-summary.txt || true
+
+          test "$RESULT" -eq 1
+
+      - name: Assert runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '\[CLEAN-HI\] ATTACK_TRIGGER .*frozen=true' clean-client-latest.log
+          grep -q '\[CLEAN-HI\] SERVER_RESULT dealt=4.0 tickStable=true' clean-client-latest.log
+          grep -q '\[CLEAN-HI\] SERVER_CLEAN_PASS' clean-client-latest.log
+          grep -Eq '\[CLEAN-HI\] CLIENT_VISUAL_PROGRESS ringFrames=[1-9][0-9]* grayscalePasses=[1-9][0-9]*' clean-client-latest.log
+          grep -Eq '\[CLEAN-HI\] CLIENT_CLEAN_PASS ringFrames=[1-9][0-9]* grayscalePasses=[1-9][0-9]* resumedTick=' clean-client-latest.log
+          ! grep -q '\[CLEAN-HI\] FAIL' clean-client-latest.log
+          ! grep -Eq 'InvalidMixinException|NoSuchMethodError|NoClassDefFoundError|ClassNotFoundException|VerifyError' clean-client-latest.log
+
+          JAR="$(find clean-hit-indicator/build/libs -maxdepth 1 -name '*.jar' | head -1)"
+          sha256sum "$JAR" > clean-jar-sha256.txt
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulshade-hit-indicator-clean-v1-runtime-evidence
+          path: |
+            clean-hit-indicator/build/libs/*.jar
+            clean-client-latest.log
+            clean-dedicated-server.log
+            clean-runtime-summary.txt
+            clean-jar-sha256.txt
+            clean-screenshots/**
