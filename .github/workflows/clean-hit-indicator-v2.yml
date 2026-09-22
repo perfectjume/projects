@@ -88,6 +88,8 @@ jobs:
       matrix:
         neo:
           - '21.1.248'
+          - '21.1.249'
+          - '21.1.250'
           - '21.1.251'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
