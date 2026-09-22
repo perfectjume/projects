@@ -2,6 +2,7 @@ package com.example.examplemod;
 
 import com.misanthropy.hit_indicator.client.CameraShake;
 import com.misanthropy.hit_indicator.client.EmfAnimationClockCompat;
+import com.misanthropy.hit_indicator.client.EntityRenderContext;
 import com.misanthropy.hit_indicator.client.FrozenRenderClock;
 import com.misanthropy.hit_indicator.client.StasisDesaturationRenderer;
 import com.misanthropy.hit_indicator.client.WindupTracker;
@@ -45,6 +46,7 @@ public final class RuntimeTestClient {
     private static boolean renderClockFreezeProbeLogged;
     private static boolean stasisGrayscaleLogged;
     private static boolean emfClockProbeLogged;
+    private static boolean emfDirectClockProbeLogged;
     private static boolean stasisDiagnosticLogged;
     private static boolean moddedStackLogged;
     private static boolean releasePredicateFalseLogged;
@@ -136,6 +138,42 @@ public final class RuntimeTestClient {
                     LOGGER.info("[HI-MATRIX] CLIENT_TIME_STOP_DIRECT_PROBE before={} after={} tickCanceled={} maintenanceStable={} externalHeadBefore={} externalHeadAfter={} externalHeadBlocked={}",
                             before, after, before == after, maintenanceStable,
                             externalBefore, externalAfter, externalBefore == externalAfter);
+                }
+
+                if ("FREEZE".equals(scenario)
+                        && !emfDirectClockProbeLogged
+                        && net.neoforged.fml.ModList.get().isLoaded("entity_model_features")) {
+                    emfDirectClockProbeLogged = true;
+                    try {
+                        EntityRenderContext.enter(living);
+                        Class<?> emfContext = Class.forName(
+                                "traben.entity_model_features.models.animation.EMFAnimationEntityContext");
+                        java.lang.reflect.Method getFrameCounter = emfContext.getMethod("getFrameCounter");
+                        java.lang.reflect.Method incFrameCount = emfContext.getMethod("incFrameCount");
+                        java.lang.reflect.Method getFrameTime = emfContext.getMethod("getFrameTime");
+                        java.lang.reflect.Method getTime = emfContext.getMethod("getTime");
+                        java.lang.reflect.Method isPaused = emfContext.getMethod("isEntityAnimPausedWrapped");
+
+                        float frame1 = ((Number) getFrameCounter.invoke(null)).floatValue();
+                        float time1 = ((Number) getTime.invoke(null)).floatValue();
+                        incFrameCount.invoke(null);
+                        float frame2 = ((Number) getFrameCounter.invoke(null)).floatValue();
+                        float time2 = ((Number) getTime.invoke(null)).floatValue();
+                        float frameTime = ((Number) getFrameTime.invoke(null)).floatValue();
+                        boolean paused = (boolean) isPaused.invoke(null);
+
+                        boolean stable = Math.abs(frame1 - frame2) < 0.0001F
+                                && Math.abs(time1 - time2) < 0.0001F
+                                && Math.abs(frameTime) < 0.0001F
+                                && !paused;
+
+                        LOGGER.info("[HI-MATRIX] EMF_DIRECT_CLOCK_FREEZE frame1={} frame2={} time1={} time2={} frameTime={} emfPaused={} stable={}",
+                                frame1, frame2, time1, time2, frameTime, paused, stable);
+                    } catch (ReflectiveOperationException error) {
+                        LOGGER.error("[HI-MATRIX] EMF_DIRECT_CLOCK_FREEZE_ERROR", error);
+                    } finally {
+                        EntityRenderContext.exit(living);
+                    }
                 }
 
                 if ("FREEZE".equals(scenario)
