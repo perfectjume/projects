@@ -1,5 +1,6 @@
 package com.misanthropy.hit_indicator.mixin.client;
 
+import com.misanthropy.hit_indicator.client.EntityRenderContext;
 import com.misanthropy.hit_indicator.client.FrozenRenderClock;
 import com.misanthropy.hit_indicator.client.StasisDesaturationRenderer;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -28,6 +29,7 @@ public abstract class LevelRendererTimeStopMixin {
             PoseStack poseStack,
             MultiBufferSource bufferSource,
             CallbackInfo ci) {
+        EntityRenderContext.enter(entity);
         StasisDesaturationRenderer.begin(entity, bufferSource);
     }
 
@@ -64,5 +66,6 @@ public abstract class LevelRendererTimeStopMixin {
             MultiBufferSource bufferSource,
             CallbackInfo ci) {
         StasisDesaturationRenderer.end(entity, bufferSource);
+        EntityRenderContext.exit(entity);
     }
 }
