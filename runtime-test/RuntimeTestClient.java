@@ -1,6 +1,7 @@
 package com.example.examplemod;
 
 import com.misanthropy.hit_indicator.client.CameraShake;
+import com.misanthropy.hit_indicator.client.EmfAnimationClockCompat;
 import com.misanthropy.hit_indicator.client.FrozenRenderClock;
 import com.misanthropy.hit_indicator.client.StasisDesaturationRenderer;
 import com.misanthropy.hit_indicator.client.WindupTracker;
@@ -43,6 +44,7 @@ public final class RuntimeTestClient {
     private static boolean directFreezeProbeLogged;
     private static boolean renderClockFreezeProbeLogged;
     private static boolean stasisGrayscaleLogged;
+    private static boolean emfClockProbeLogged;
     private static boolean stasisDiagnosticLogged;
     private static boolean moddedStackLogged;
     private static boolean releasePredicateFalseLogged;
@@ -134,6 +136,25 @@ public final class RuntimeTestClient {
                     LOGGER.info("[HI-MATRIX] CLIENT_TIME_STOP_DIRECT_PROBE before={} after={} tickCanceled={} maintenanceStable={} externalHeadBefore={} externalHeadAfter={} externalHeadBlocked={}",
                             before, after, before == after, maintenanceStable,
                             externalBefore, externalAfter, externalBefore == externalAfter);
+                }
+
+                if ("FREEZE".equals(scenario)
+                        && !emfClockProbeLogged
+                        && net.neoforged.fml.ModList.get().isLoaded("entity_model_features")
+                        && EmfAnimationClockCompat.absoluteOverrides() >= 8
+                        && EmfAnimationClockCompat.tickDeltaOverrides() >= 8
+                        && EmfAnimationClockCompat.frameTimeOverrides() >= 8) {
+                    emfClockProbeLogged = true;
+                    LOGGER.info("[HI-MATRIX] EMF_CLOCK_FREEZE tickDeltaOverrides={} frameTimeOverrides={} absoluteOverrides={} timeDrift={} frameCounterDrift={} frameTimeMax={} stable={}",
+                            EmfAnimationClockCompat.tickDeltaOverrides(),
+                            EmfAnimationClockCompat.frameTimeOverrides(),
+                            EmfAnimationClockCompat.absoluteOverrides(),
+                            EmfAnimationClockCompat.maxFrozenTimeDrift(),
+                            EmfAnimationClockCompat.maxFrozenFrameCounterDrift(),
+                            EmfAnimationClockCompat.maxFrozenFrameTime(),
+                            EmfAnimationClockCompat.maxFrozenTimeDrift() < 0.0001F
+                                    && EmfAnimationClockCompat.maxFrozenFrameCounterDrift() < 0.0001F
+                                    && EmfAnimationClockCompat.maxFrozenFrameTime() < 0.0001F);
                 }
 
                 if ("FREEZE".equals(scenario) && !renderClockFreezeProbeLogged) {
