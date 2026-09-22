@@ -1,0 +1,50 @@
+name: Hit Indicator v25 EMF pose-freeze no-EMF runtime test
+
+on:
+  push:
+    branches:
+      - hit-indicator-v25-emf-pose-freeze
+    paths:
+      - '.github/workflows/hit-indicator-v25-runtime.yml'
+      - 'runtime-test/**'
+  workflow_dispatch:
+
+jobs:
+  literal-client:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install runtime packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox xdotool imagemagick libgl1-mesa-dri mesa-utils
+
+      - name: Build and run v25 matrix
+        run: bash runtime-test/run-v25-ci.sh
+
+      - name: Upload v25 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hit-indicator-v25-emf-pose-freeze-evidence
+          if-no-files-found: warn
+          path: |
+            /tmp/hit-indicator-v25-emf-pose-freeze-evidence.zip
+            /tmp/hit_indicator-1.21.1-neoforge-v25.jar
+            /tmp/stasis-desaturation-v25.javap
+            /tmp/stasis-events-v25.javap
+            /tmp/levelrenderer-stasis-v25.javap
+            client-latest.log
+            server-latest.log
+            runtime-summary.txt
+            filtered-runtime.log
+            screenshots/**
