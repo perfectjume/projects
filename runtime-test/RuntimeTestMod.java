@@ -27,6 +27,7 @@ import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
@@ -484,7 +485,17 @@ public final class RuntimeTestMod {
     }
 
     private static void triggerMelee(Zombie z, HeavyKind expected) {
-        boolean directResult = z.doHurtTarget(player);
+        // Better Mob Combat replaces the vanilla Mob#doHurtTarget flow with
+        // its scheduled animation/collision pipeline. For the deterministic
+        // runtime matrix, inject the same mob DamageSource directly when BMC
+        // is present so Hit Indicator still receives an immediate damage
+        // attempt while BMC's real client renderer/mixins remain loaded.
+        boolean directResult;
+        if (ModList.get().isLoaded("better_mob_combat_reimagined")) {
+            directResult = player.hurt(player.damageSources().mobAttack(z), 4.0F);
+        } else {
+            directResult = z.doHurtTarget(player);
+        }
         z.setNoAi(true);
         attacker = z;
         actionStarted = true;
