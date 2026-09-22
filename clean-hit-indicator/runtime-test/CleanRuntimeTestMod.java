@@ -1,7 +1,7 @@
-package com.soulshade.runtime;
+package dev.hitindicator.runtime;
 
-import com.soulshade.hitindicator.Settings;
-import com.soulshade.hitindicator.server.AttackDelayManager;
+import dev.hitindicator.Settings;
+import dev.hitindicator.server.AttackDelayManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
