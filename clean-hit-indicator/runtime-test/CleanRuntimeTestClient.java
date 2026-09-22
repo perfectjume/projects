@@ -1,8 +1,8 @@
-package com.soulshade.runtime;
+package dev.hitindicator.runtime;
 
-import com.soulshade.hitindicator.client.StasisDesaturationRenderer;
-import com.soulshade.hitindicator.client.TelegraphRenderer;
-import com.soulshade.hitindicator.client.TelegraphState;
+import dev.hitindicator.client.StasisDesaturationRenderer;
+import dev.hitindicator.client.TelegraphRenderer;
+import dev.hitindicator.client.TelegraphState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.monster.Zombie;
