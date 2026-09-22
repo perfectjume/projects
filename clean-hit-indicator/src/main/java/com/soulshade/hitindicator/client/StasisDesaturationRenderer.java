@@ -22,6 +22,7 @@ public final class StasisDesaturationRenderer {
     private static int oldTexture0;
     private static ShaderInstance oldShader;
     private static final GlStateBackup GL_BACKUP = new GlStateBackup();
+    private static int passCount;
 
     private StasisDesaturationRenderer() {}
 
@@ -87,6 +88,7 @@ public final class StasisDesaturationRenderer {
         builder.addVertex( 1.0F,  1.0F, 0.0F).setUv(1.0F, 1.0F);
         builder.addVertex(-1.0F,  1.0F, 0.0F).setUv(0.0F, 1.0F);
         BufferUploader.drawWithShader(builder.buildOrThrow());
+        passCount++;
 
         RenderSystem.setShaderTexture(0, oldTexture0);
         RenderSystem.restoreGlState(GL_BACKUP);
@@ -94,6 +96,10 @@ public final class StasisDesaturationRenderer {
             RenderSystem.setShader(() -> oldShader);
         }
         main.bindWrite(false);
+    }
+
+    public static int passCount() {
+        return passCount;
     }
 
     private static void ensureEntityTarget(int width, int height) {
