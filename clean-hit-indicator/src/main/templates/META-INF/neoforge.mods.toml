@@ -6,18 +6,17 @@ license="${mod_license}"
 modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
-authors="SoulShade"
 description='''
 Clean-room attack telegraph and stasis system for NeoForge 1.21.1.
 '''
 
 [[mixins]]
-config="soulshade_hit_indicator.mixins.json"
+config="hit_indicator.mixins.json"
 
 [[dependencies.${mod_id}]]
 modId="neoforge"
 type="required"
-versionRange="[${neo_version},)"
+versionRange="${neo_version_range}"
 ordering="NONE"
 side="BOTH"
 
