@@ -63,6 +63,14 @@ jobs:
               print('CLEAN_HIT_INDICATOR_V2_ARTIFACT_PASS')
           PY
 
+          rm -rf /tmp/hit_indicator_audit
+          mkdir -p /tmp/hit_indicator_audit
+          unzip -q "$JAR" -d /tmp/hit_indicator_audit
+          if grep -R -a -i -E 'soulshade|misanthropy|1\.7\.1-port' /tmp/hit_indicator_audit; then
+            echo "Legacy identity string leaked into JAR"
+            exit 1
+          fi
+
           sha256sum "$JAR" | tee hit-indicator-clean-v2-sha256.txt
 
       - name: Upload exact binary
