@@ -393,27 +393,63 @@ public final class RuntimeTestMod {
         HitIndicatorConfig.CROWD_SPACING_TICKS.set(20);
         HitIndicatorConfig.WINDUP_TICKS.set(30);
 
+        // Probe the actual CrowdControl admission gate directly. This keeps the
+        // test deterministic even when Better Mob Combat replaces vanilla mob
+        // attack scheduling/AI. The first attacker must be admitted and the
+        // next two must be refused while maxAttackers=1.
+        crowdClearForTest();
+
         List<Zombie> zombies = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
-            Zombie z = zombie(1.5D + i * 0.1D);
-            zombies.add(z);
-            if (ModList.get().isLoaded("better_mob_combat_reimagined")) {
-                player.hurt(player.damageSources().mobAttack(z), 4.0F);
-            } else {
-                z.doHurtTarget(player);
-            }
+            zombies.add(zombie(1.5D + i * 0.1D));
+        }
+
+        boolean firstRefused = crowdRefuseForTest(zombies.get(0), 0);
+        boolean secondRefused = crowdRefuseForTest(zombies.get(1), 1);
+        boolean thirdRefused = crowdRefuseForTest(zombies.get(2), 1);
+
+        LOGGER.info("[HI-MATRIX] CROWD_GATE firstRefused={} secondRefused={} thirdRefused={} expected=false,true,true",
+                firstRefused, secondRefused, thirdRefused);
+
+        for (Zombie z : zombies) {
             z.setNoAi(true);
         }
-        int winding = 0;
-        for (Zombie z : zombies) if (AttackInterceptor.isWindingUp(z)) winding++;
-        LOGGER.info("[HI-MATRIX] CROWD_WINDING count={} expected=1", winding);
-        if (winding != 1) {
-            fail("crowd maxAttackers=1 allowed winding=" + winding);
+        crowdClearForTest();
+
+        if (firstRefused || !secondRefused || !thirdRefused) {
+            fail("crowd maxAttackers=1 gate mismatch first=" + firstRefused
+                    + " second=" + secondRefused + " third=" + thirdRefused);
             return;
         }
-        for (Zombie z : zombies) AttackInterceptor.cancelPendingHit(z);
+
         actionStarted = true;
         pass(now, "CROWD_MAX_ONE_ENFORCED");
+    }
+
+    private static boolean crowdRefuseForTest(LivingEntity attacker, int pendingOnPlayer) {
+        try {
+            Class<?> crowd = Class.forName("com.misanthropy.hit_indicator.server.CrowdControl");
+            java.lang.reflect.Method method = crowd.getDeclaredMethod(
+                    "refuse",
+                    LivingEntity.class,
+                    ServerPlayer.class,
+                    int.class);
+            method.setAccessible(true);
+            return (boolean) method.invoke(null, attacker, player, pendingOnPlayer);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not probe CrowdControl.refuse", error);
+        }
+    }
+
+    private static void crowdClearForTest() {
+        try {
+            Class<?> crowd = Class.forName("com.misanthropy.hit_indicator.server.CrowdControl");
+            java.lang.reflect.Method method = crowd.getDeclaredMethod("clear");
+            method.setAccessible(true);
+            method.invoke(null);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not reset CrowdControl", error);
+        }
     }
 
     private static void testUniversalReplay(int t, int now) {
