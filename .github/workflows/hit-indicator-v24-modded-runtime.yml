@@ -1,0 +1,47 @@
+name: Hit Indicator v24 exact modded stack runtime test
+
+on:
+  push:
+    branches:
+      - hit-indicator-v24-universal-stasis-grayscale
+    paths:
+      - '.github/workflows/hit-indicator-v24-modded-runtime.yml'
+      - 'runtime-test/**'
+  workflow_dispatch:
+
+jobs:
+  literal-client-modded:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install runtime packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox xdotool imagemagick libgl1-mesa-dri mesa-utils
+
+      - name: Build and run exact modded matrix
+        run: bash runtime-test/run-v24-modded-ci.sh
+
+      - name: Upload exact modded evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hit-indicator-v24-exact-modded-stack-evidence
+          if-no-files-found: warn
+          path: |
+            /tmp/hit-indicator-v24-universal-stasis-grayscale-modded-evidence.zip
+            /tmp/hit_indicator-1.21.1-neoforge-v24.jar
+            client-latest.log
+            server-latest.log
+            runtime-summary.txt
+            filtered-runtime.log
+            screenshots/**
