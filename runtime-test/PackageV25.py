@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import glob
 import json
+import os
 import sys
 import zipfile
 
@@ -17,6 +19,12 @@ replacements = {
     "com/misanthropy/hit_indicator/mixin/client/EmfAnimationClockMixin.class": emf_mixin_cls,
     "com/misanthropy/hit_indicator/mixin/client/LevelRendererTimeStopMixin.class": level_cls,
 }
+
+compat_dir = os.path.dirname(compat_cls)
+for nested in glob.glob(os.path.join(compat_dir, "EmfAnimationClockCompat$*.class")):
+    replacements[
+        "com/misanthropy/hit_indicator/client/" + os.path.basename(nested)
+    ] = nested
 
 with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(out, "w") as zout:
     for info in zin.infolist():
