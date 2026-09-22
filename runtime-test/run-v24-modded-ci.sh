@@ -456,15 +456,15 @@ python ../runtime-test/PackageV23.py \
   ../runtime-test/stasis_desaturate.json \
   ../runtime-test/stasis_desaturate.vsh \
   ../runtime-test/stasis_desaturate.fsh \
-  /tmp/hit_indicator-1.21.1-neoforge-v24.jar \
+  /tmp/hit_indicator-1.21.1-neoforge-v23.jar \
   "v23 universal stasis grayscale"
 
-unzip -t /tmp/hit_indicator-1.21.1-neoforge-v24.jar
-javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v24.jar -c -p \
+unzip -t /tmp/hit_indicator-1.21.1-neoforge-v23.jar
+javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v23.jar -c -p \
   com.misanthropy.hit_indicator.client.StasisDesaturationRenderer > /tmp/stasis-desaturation-v23.javap
-javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v24.jar -v -p \
+javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v23.jar -v -p \
   com.misanthropy.hit_indicator.client.StasisDesaturationClientEvents > /tmp/stasis-events-v23.javap
-javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v24.jar -v -p \
+javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v23.jar -v -p \
   com.misanthropy.hit_indicator.mixin.client.LevelRendererTimeStopMixin > /tmp/levelrenderer-stasis-v23.javap
 
 grep -q 'WindupTracker.shouldFreeze' /tmp/stasis-desaturation-v23.javap
@@ -477,7 +477,7 @@ grep -q 'StasisDesaturationRenderer.end' /tmp/levelrenderer-stasis-v23.javap
 
 python - <<'PY'
 import zipfile
-z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v24.jar')
+z=zipfile.ZipFile('/tmp/hit_indicator-1.21.1-neoforge-v23.jar')
 required=[
  'com/misanthropy/hit_indicator/client/StasisDesaturationClientEvents.class',
  'com/misanthropy/hit_indicator/client/StasisDesaturationRenderer.class',
