@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import glob
 import json
+import os
 import sys
 import zipfile
 
@@ -11,6 +13,11 @@ replacements = {
     "com/misanthropy/hit_indicator/client/EmfPoseFreeze.class": helper_cls,
     "com/misanthropy/hit_indicator/mixin/client/EmfModelAnimationFreezeMixin.class": mixin_cls,
 }
+helper_dir = os.path.dirname(helper_cls)
+for nested in glob.glob(os.path.join(helper_dir, "EmfPoseFreeze$*.class")):
+    replacements[
+        "com/misanthropy/hit_indicator/client/" + os.path.basename(nested)
+    ] = nested
 
 with zipfile.ZipFile(src, "r") as zin:
     mixin_json = json.loads(zin.read("hit_indicator.mixins.json").decode("utf-8"))
@@ -24,6 +31,8 @@ with zipfile.ZipFile(src, "r") as zin:
     with zipfile.ZipFile(out, "w") as zout:
         for info in zin.infolist():
             if info.filename in replacements:
+                continue
+            if info.filename.startswith("com/misanthropy/hit_indicator/client/EmfPoseFreeze$"):
                 continue
             if info.filename == "hit_indicator.mixins.json":
                 continue
