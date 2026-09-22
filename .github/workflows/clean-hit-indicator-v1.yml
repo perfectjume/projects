@@ -1,0 +1,61 @@
+name: Clean Hit Indicator v1 build
+
+on:
+  push:
+    branches:
+      - clean-hit-indicator-v1
+    paths:
+      - 'clean-hit-indicator/**'
+      - '.github/workflows/clean-hit-indicator-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.2.1'
+
+      - name: Build clean project
+        working-directory: clean-hit-indicator
+        run: gradle --no-daemon build
+
+      - name: Verify clean-room artifact
+        shell: bash
+        run: |
+          JAR="$(find clean-hit-indicator/build/libs -maxdepth 1 -name '*.jar' | head -1)"
+          test -n "$JAR"
+          unzip -t "$JAR"
+          python3 - "$JAR" <<'PY'
+          import sys, zipfile
+          jar=sys.argv[1]
+          with zipfile.ZipFile(jar) as z:
+              names=z.namelist()
+              assert not any(n.startswith('com/misanthropy/') for n in names), 'legacy package leaked'
+              assert not any('hit-indicator-v' in n.lower() for n in names), 'legacy marker leaked'
+              meta=z.read('META-INF/neoforge.mods.toml').decode('utf-8','replace')
+              assert 'modId="soulshade_hit_indicator"' in meta, meta
+              assert 'Misanthropy' not in meta, meta
+              assert '1.7.1-port' not in meta, meta
+              assert 'soulshade_hit_indicator.mixins.json' in names
+              assert 'assets/soulshade_hit_indicator/shaders/core/stasis_desaturate.fsh' in names
+              forbidden=[n for n in names if n.endswith('.toml') and n != 'META-INF/neoforge.mods.toml']
+              assert not forbidden, forbidden
+              print('CLEAN_ROOM_ARTIFACT_PASS')
+          PY
+          sha256sum "$JAR"
+
+      - name: Upload clean JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulshade-hit-indicator-clean-v1
+          path: clean-hit-indicator/build/libs/*.jar
