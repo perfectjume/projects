@@ -49,16 +49,12 @@ public final class FrozenRenderClock {
 
         Release release = RELEASE.get(id);
         if (release != null) {
-            long gameTime = entity.level().getGameTime();
-            if (gameTime == release.bridgeGameTime) {
-                return Math.min(1.0F, release.partialTick + originalPartialTick);
-            }
-            if (gameTime > release.bridgeGameTime) {
-                RELEASE.remove(id);
-                FROZEN.remove(id);
-                LAST_NORMAL.put(id, new Sample(entity.tickCount, originalPartialTick));
-                return originalPartialTick;
-            }
+            // Do not expire the bridge from the render path. ClientLevel gameTime
+            // can advance after entity ticking but before rendering, which made
+            // the old implementation discard Release before any frame used it.
+            // The next tickNonPassenger call owns bridge completion.
+            float live = Math.max(0.0F, Math.min(1.0F, originalPartialTick));
+            return release.partialTick + (1.0F - release.partialTick) * live;
         }
 
         Frozen frozen = FROZEN.get(id);
@@ -109,8 +105,7 @@ public final class FrozenRenderClock {
 
     public static boolean isReleaseBridge(Entity entity) {
         if (entity == null) return false;
-        Release release = RELEASE.get(entity.getId());
-        return release != null && entity.level().getGameTime() == release.bridgeGameTime;
+        return RELEASE.containsKey(entity.getId());
     }
 
     public static float frozenPartial(Entity entity) {
