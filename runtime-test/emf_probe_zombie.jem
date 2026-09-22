@@ -1,0 +1,23 @@
+{
+  "texture": "textures/entity/zombie/zombie",
+  "textureSize": [64, 64],
+  "models": [
+    {
+      "id": "hit_indicator_probe",
+      "part": "right_leg",
+      "attach": true,
+      "translate": [0, 0, 0],
+      "boxes": [
+        {
+          "textureOffset": [0, 16],
+          "coordinates": [-0.5, 5.0, -0.5, 1.0, 1.0, 1.0]
+        }
+      ],
+      "animations": [
+        {
+          "this.rx": "sin(frame_counter * 0.35) * 0.8"
+        }
+      ]
+    }
+  ]
+}
