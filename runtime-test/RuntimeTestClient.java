@@ -40,6 +40,7 @@ public final class RuntimeTestClient {
     private static boolean cameraAppliedLogged;
     private static boolean directFreezeProbeLogged;
     private static boolean renderClockFreezeProbeLogged;
+    private static boolean releasePredicateFalseLogged;
     private static boolean releaseBridgeObserved;
     private static boolean releaseResumeLogged;
     private static long releaseBridgeGameTime = Long.MIN_VALUE;
@@ -160,6 +161,17 @@ public final class RuntimeTestClient {
             Entity frozenEntity = mc.level.getEntity(freezeProbeEntityId);
             if (frozenEntity instanceof LivingEntity living
                     && !WindupTracker.shouldFreeze(living)) {
+                if (!releasePredicateFalseLogged) {
+                    releasePredicateFalseLogged = true;
+                    LOGGER.info("[HI-MATRIX] RELEASE_PREDICATE_FALSE id={} gameTime={} tickCount={} active={} frozenPartial={} bridge={}",
+                            living.getId(),
+                            mc.level.getGameTime(),
+                            living.tickCount,
+                            WindupTracker.active().containsKey(living.getId()),
+                            FrozenRenderClock.frozenPartial(living),
+                            FrozenRenderClock.isReleaseBridge(living));
+                }
+
                 if (!releaseBridgeObserved && FrozenRenderClock.isReleaseBridge(living)) {
                     float frozen = FrozenRenderClock.frozenPartial(living);
                     float earlyRequested = 0.05F;
