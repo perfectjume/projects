@@ -25,6 +25,9 @@ public final class StasisDesaturationRenderer {
     private static boolean active;
     private static boolean stencilWasEnabled;
     private static int oldTexture0;
+    private static ShaderInstance oldShader;
+    private static int beginCount;
+    private static int passCount;
     private static final GlStateBackup GL_BACKUP = new GlStateBackup();
 
     private StasisDesaturationRenderer() {}
@@ -55,6 +58,7 @@ public final class StasisDesaturationRenderer {
         RenderSystem.backupGlState(GL_BACKUP);
         stencilWasEnabled = GL11.glIsEnabled(GL11.GL_STENCIL_TEST);
         oldTexture0 = RenderSystem.getShaderTexture(0);
+        oldShader = RenderSystem.getShader();
 
         main.bindWrite(false);
         RenderSystem.clearStencil(0);
@@ -66,6 +70,7 @@ public final class StasisDesaturationRenderer {
         RenderSystem.stencilFunc(GL11.GL_ALWAYS, 1, 0xFF);
         RenderSystem.stencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
         active = true;
+        beginCount++;
     }
 
     public static void end(Entity entity, MultiBufferSource bufferSource) {
@@ -116,18 +121,44 @@ public final class StasisDesaturationRenderer {
         builder.addVertex( 1.0F,  1.0F, 0.0F).setUv(1.0F, 1.0F);
         builder.addVertex(-1.0F,  1.0F, 0.0F).setUv(0.0F, 1.0F);
         BufferUploader.drawWithShader(builder.buildOrThrow());
+        passCount++;
 
         RenderSystem.setShaderTexture(0, oldTexture0);
-        RenderSystem.restoreGlState(GL_BACKUP);
 
-        RenderSystem.clearStencil(0);
+        // Clear our temporary entity mask before restoring the caller's exact
+        // stencil parameters. GlStateBackup stores the parameters but not the
+        // enabled/disabled bit, so that bit is restored separately below.
         RenderSystem.stencilMask(0xFF);
+        RenderSystem.clearStencil(0);
         RenderSystem.clear(GL11.GL_STENCIL_BUFFER_BIT, Minecraft.ON_OSX);
-        if (!stencilWasEnabled) {
+
+        RenderSystem.restoreGlState(GL_BACKUP);
+        if (oldShader != null) {
+            RenderSystem.setShader(() -> oldShader);
+        }
+        if (stencilWasEnabled) {
+            GL11.glEnable(GL11.GL_STENCIL_TEST);
+        } else {
             GL11.glDisable(GL11.GL_STENCIL_TEST);
         }
 
         main.bindWrite(false);
+    }
+
+    public static boolean shaderReady() {
+        return shader != null;
+    }
+
+    public static boolean stencilReady() {
+        return Minecraft.getInstance().getMainRenderTarget().isStencilEnabled();
+    }
+
+    public static int beginCount() {
+        return beginCount;
+    }
+
+    public static int passCount() {
+        return passCount;
     }
 
     private static void flush(MultiBufferSource bufferSource) {
@@ -162,6 +193,6 @@ public final class StasisDesaturationRenderer {
                 0,
                 GL11.GL_RGBA,
                 GL11.GL_UNSIGNED_BYTE,
-                0L);
+                (java.nio.ByteBuffer) null);
     }
 }
