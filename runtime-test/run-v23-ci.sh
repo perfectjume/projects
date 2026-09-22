@@ -431,8 +431,9 @@ javap -classpath /tmp/hit_indicator-1.21.1-neoforge-v23.jar -v -p \
 
 grep -q 'WindupTracker.shouldFreeze' /tmp/stasis-desaturation-v23.javap
 grep -q 'FrozenRenderClock.isReleaseBridge' /tmp/stasis-desaturation-v23.javap
-grep -q 'enableStencil' /tmp/stasis-events-v23.javap
 grep -q 'RegisterShadersEvent' /tmp/stasis-events-v23.javap
+grep -q 'TextureTarget' /tmp/stasis-desaturation-v23.javap
+grep -q 'copyDepthFrom' /tmp/stasis-desaturation-v23.javap
 grep -q 'StasisDesaturationRenderer.begin' /tmp/levelrenderer-stasis-v23.javap
 grep -q 'StasisDesaturationRenderer.end' /tmp/levelrenderer-stasis-v23.javap
 
@@ -632,7 +633,7 @@ done
 grep -q '\[HI-MATRIX\] CLIENT_TIME_STOP_DIRECT_PROBE .*tickCanceled=true .*maintenanceStable=true .*externalHeadBlocked=true' client-latest.log
 grep -Eq '\[HI-MATRIX\] CLIENT_FREEZE_TRUE scenario=FREEZE .*kind=MELEE .*elapsed=[01]$' client-latest.log
 grep -q '\[HI-MATRIX\] FROZEN_RENDER_CLOCK .*stable=true' client-latest.log
-grep -Eq '\[HI-MATRIX\] STASIS_GRAYSCALE shaderReady=true stencilReady=true beginCount=[1-9][0-9]* passCount=[1-9][0-9]* executed=true stencilPixels=[1-9][0-9]* .*pixelDesaturated=true' client-latest.log
+grep -Eq '\[HI-MATRIX\] STASIS_GRAYSCALE shaderReady=true targetReady=true beginCount=[1-9][0-9]* passCount=[1-9][0-9]* executed=true entityPixels=[1-9][0-9]* beforeAlpha=2[4-5][0-9] .*pixelDesaturated=true' client-latest.log
 test -f screenshots/stasis_grayscale.png
 grep -q '\[HI-MATRIX\] CONTINUOUS_RELEASE_BRIDGE .*continuous=true' client-latest.log
 grep -q '\[HI-MATRIX\] CONTINUOUS_RELEASE_RESUME bridgeCleared=true tickResumed=true externalResumed=true .*liveClock=true' client-latest.log
