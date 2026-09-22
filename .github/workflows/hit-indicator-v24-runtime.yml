@@ -3,7 +3,7 @@ name: Hit Indicator v24 universal stasis grayscale runtime test
 on:
   push:
     branches:
-      - hit-indicator-v24-universal-stasis-grayscale
+      - hit-indicator-v24-emf-stasis-freeze
     paths:
       - '.github/workflows/hit-indicator-v24-runtime.yml'
       - 'runtime-test/**'
@@ -35,10 +35,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: hit-indicator-v24-universal-stasis-grayscale-evidence
+          name: hit-indicator-v24-emf-stasis-freeze-evidence
           if-no-files-found: warn
           path: |
-            /tmp/hit-indicator-v24-universal-stasis-grayscale-evidence.zip
+            /tmp/hit-indicator-v24-emf-stasis-freeze-evidence.zip
             /tmp/hit_indicator-1.21.1-neoforge-v24.jar
             /tmp/stasis-desaturation-v24.javap
             /tmp/stasis-events-v24.javap
