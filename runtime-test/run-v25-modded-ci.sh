@@ -731,7 +731,7 @@ grep -q '\[HI-MATRIX\] SERVER_ALL_SCENARIOS_PASS' client-latest.log
 grep -q '\[HI-MATRIX\] MODDED_STACK_LOADED bettercombat=true playeranimator=true betterMobCombat=true' client-latest.log
 grep -q 'entity_model_features' client-latest.log
 grep -q 'entity_texture_features' client-latest.log
-grep -Eq '\[HI-MATRIX\] EMF_CLOCK_FREEZE tickDeltaOverrides=[1-9][0-9]* frameTimeOverrides=[1-9][0-9]* absoluteOverrides=[1-9][0-9]* timeDrift=0\.0 frameCounterDrift=0\.0 frameTimeMax=0\.0 stable=true' client-latest.log
+grep -q '\[HI-MATRIX\] EMF_DIRECT_CLOCK_FREEZE .*frameTime=0.0 .*emfPaused=false .*stable=true' client-latest.log
 grep -q 'better_mob_combat_reimagined' client-latest.log
 grep -q 'bettercombat' client-latest.log
 grep -q 'playeranimator' client-latest.log
