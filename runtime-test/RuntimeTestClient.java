@@ -178,8 +178,8 @@ public final class RuntimeTestClient {
                     float laterRequested = 0.40F;
                     float early = FrozenRenderClock.partialFor(living, earlyRequested);
                     float later = FrozenRenderClock.partialFor(living, laterRequested);
-                    float expectedEarly = Math.min(1.0F, frozen + earlyRequested);
-                    float expectedLater = Math.min(1.0F, frozen + laterRequested);
+                    float expectedEarly = frozen + (1.0F - frozen) * earlyRequested;
+                    float expectedLater = frozen + (1.0F - frozen) * laterRequested;
                     boolean continuous =
                             !Float.isNaN(frozen)
                             && Math.abs(early - expectedEarly) < 0.0001F
