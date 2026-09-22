@@ -1,0 +1,38 @@
+name: Hit Indicator v2 handoff snapshot
+
+on:
+  push:
+    branches:
+      - clean-hit-indicator-v2
+    paths:
+      - '.github/workflows/hit-indicator-v2-handoff.yml'
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Package source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p handoff/source
+          cp -a clean-hit-indicator/. handoff/source/
+          {
+            echo "branch=clean-hit-indicator-v2"
+            echo "commit=$(git rev-parse HEAD)"
+            echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > handoff/GIT_STATE.txt
+          git status --short > handoff/GIT_STATUS.txt
+          find handoff/source -type f | sort > handoff/SOURCE_FILES.txt
+          zip -qr hit-indicator-v2-source-snapshot.zip handoff
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: hit-indicator-v2-source-snapshot
+          path: hit-indicator-v2-source-snapshot.zip
