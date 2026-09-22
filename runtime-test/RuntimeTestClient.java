@@ -2,6 +2,7 @@ package com.example.examplemod;
 
 import com.misanthropy.hit_indicator.client.CameraShake;
 import com.misanthropy.hit_indicator.client.FrozenRenderClock;
+import com.misanthropy.hit_indicator.client.EmfStasisCompat;
 import com.misanthropy.hit_indicator.client.StasisDesaturationRenderer;
 import com.misanthropy.hit_indicator.client.WindupTracker;
 import com.misanthropy.hit_indicator.client.WindupTracker.Windup;
@@ -43,6 +44,9 @@ public final class RuntimeTestClient {
     private static boolean directFreezeProbeLogged;
     private static boolean renderClockFreezeProbeLogged;
     private static boolean stasisGrayscaleLogged;
+    private static boolean emfCompatStatusLogged;
+    private static boolean emfFrozenConditionLogged;
+    private static boolean emfResumeConditionLogged;
     private static boolean stasisDiagnosticLogged;
     private static boolean moddedStackLogged;
     private static boolean releasePredicateFalseLogged;
@@ -60,6 +64,12 @@ public final class RuntimeTestClient {
         if (mc.level == null) return;
 
         String scenario = RuntimeTestMod.currentScenario();
+
+        if (!emfCompatStatusLogged && net.neoforged.fml.ModList.get().isLoaded("entity_model_features")) {
+            emfCompatStatusLogged = true;
+            LOGGER.info("[HI-MATRIX] EMF_STASIS_COMPAT registered={} evaluations={}",
+                    EmfStasisCompat.isRegistered(), EmfStasisCompat.evaluations());
+        }
         if (!moddedStackLogged) {
             moddedStackLogged = true;
             LOGGER.info("[HI-MATRIX] MODDED_STACK_LOADED bettercombat={} playeranimator={} betterMobCombat={}",
@@ -134,6 +144,15 @@ public final class RuntimeTestClient {
                     LOGGER.info("[HI-MATRIX] CLIENT_TIME_STOP_DIRECT_PROBE before={} after={} tickCanceled={} maintenanceStable={} externalHeadBefore={} externalHeadAfter={} externalHeadBlocked={}",
                             before, after, before == after, maintenanceStable,
                             externalBefore, externalAfter, externalBefore == externalAfter);
+                }
+
+                if ("FREEZE".equals(scenario)
+                        && !emfFrozenConditionLogged
+                        && EmfStasisCompat.isRegistered()) {
+                    boolean paused = EmfStasisCompat.evaluateForTest(living);
+                    emfFrozenConditionLogged = true;
+                    LOGGER.info("[HI-MATRIX] EMF_STASIS_FROZEN_CONDITION paused={} evaluations={}",
+                            paused, EmfStasisCompat.evaluations());
                 }
 
                 if ("FREEZE".equals(scenario) && !renderClockFreezeProbeLogged) {
@@ -214,6 +233,13 @@ public final class RuntimeTestClient {
                     boolean tickResumed = living.tickCount > releaseBridgeTickCount;
                     boolean externalResumed = MobAnimationProbe.count() > releaseBridgeExternalCount;
                     boolean liveClock = Math.abs(applied - requested) < 0.0001F;
+
+                    if (EmfStasisCompat.isRegistered() && !emfResumeConditionLogged) {
+                        boolean pausedAfter = EmfStasisCompat.evaluateForTest(living);
+                        emfResumeConditionLogged = true;
+                        LOGGER.info("[HI-MATRIX] EMF_STASIS_RESUME_CONDITION paused={} evaluations={}",
+                                pausedAfter, EmfStasisCompat.evaluations());
+                    }
 
                     releaseResumeLogged = true;
                     LOGGER.info("[HI-MATRIX] CONTINUOUS_RELEASE_RESUME bridgeCleared={} tickResumed={} externalResumed={} requested={} applied={} liveClock={}",
