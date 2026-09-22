@@ -48,7 +48,7 @@ public final class CleanRuntimeTestMod {
 
         ticks++;
 
-        if (ticks == 20) {
+        if (ticks == 80) {
             buildArena(player.serverLevel());
             player.teleportTo(0.5D, 101.0D, 0.5D);
             player.setHealth(player.getMaxHealth());
@@ -65,7 +65,7 @@ public final class CleanRuntimeTestMod {
             LOGGER.info("[CLEAN-HI] ATTACKER_READY id={}", attacker.getId());
         }
 
-        if (ticks == 25 && attacker != null) {
+        if (ticks == 90 && attacker != null) {
             healthBefore = player.getHealth();
             frozenTickCount = attacker.tickCount;
             boolean directResult = player.hurt(player.damageSources().mobAttack(attacker), 4.0F);
