@@ -42,6 +42,7 @@ public final class RuntimeTestClient {
     private static boolean directFreezeProbeLogged;
     private static boolean renderClockFreezeProbeLogged;
     private static boolean stasisGrayscaleLogged;
+    private static boolean stasisDiagnosticLogged;
     private static boolean releasePredicateFalseLogged;
     private static boolean releaseBridgeObserved;
     private static boolean releaseResumeLogged;
@@ -210,6 +211,17 @@ public final class RuntimeTestClient {
                             bridgeCleared, tickResumed, externalResumed, requested, applied, liveClock);
                 }
             }
+        }
+
+        if (!stasisDiagnosticLogged && StasisDesaturationRenderer.passCount() > 0) {
+            stasisDiagnosticLogged = true;
+            LOGGER.info("[HI-MATRIX] STASIS_PIXEL_DIAGNOSTIC scenario={} stencilPixels={} stencilOnePixels={} beforeSpread={} afterSpread={} rgb={}",
+                    scenario,
+                    StasisDesaturationRenderer.stencilPixelCount(),
+                    StasisDesaturationRenderer.stencilOnePixelCount(),
+                    StasisDesaturationRenderer.diagnosticBeforeSpread(),
+                    StasisDesaturationRenderer.diagnosticAfterSpread(),
+                    StasisDesaturationRenderer.diagnosticRgb());
         }
 
         if ("FREEZE".equals(scenario)
