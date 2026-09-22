@@ -19,7 +19,7 @@ import org.slf4j.LoggerFactory;
 @Mod(CleanRuntimeTestMod.MOD_ID)
 @EventBusSubscriber(modid = CleanRuntimeTestMod.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
 public final class CleanRuntimeTestMod {
-    public static final String MOD_ID = "soulshade_hit_indicator_runtime_test";
+    public static final String MOD_ID = "hit_indicator_runtime_test";
     private static final Logger LOGGER = LoggerFactory.getLogger("CleanHitIndicatorRuntime");
 
     private static ServerPlayer player;
