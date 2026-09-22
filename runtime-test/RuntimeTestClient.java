@@ -2,6 +2,7 @@ package com.example.examplemod;
 
 import com.misanthropy.hit_indicator.client.CameraShake;
 import com.misanthropy.hit_indicator.client.FrozenRenderClock;
+import com.misanthropy.hit_indicator.client.StasisDesaturationRenderer;
 import com.misanthropy.hit_indicator.client.WindupTracker;
 import com.misanthropy.hit_indicator.client.WindupTracker.Windup;
 import com.mojang.logging.LogUtils;
@@ -40,6 +41,7 @@ public final class RuntimeTestClient {
     private static boolean cameraAppliedLogged;
     private static boolean directFreezeProbeLogged;
     private static boolean renderClockFreezeProbeLogged;
+    private static boolean stasisGrayscaleLogged;
     private static boolean releasePredicateFalseLogged;
     private static boolean releaseBridgeObserved;
     private static boolean releaseResumeLogged;
@@ -208,6 +210,18 @@ public final class RuntimeTestClient {
                             bridgeCleared, tickResumed, externalResumed, requested, applied, liveClock);
                 }
             }
+        }
+
+        if ("FREEZE".equals(scenario)
+                && !stasisGrayscaleLogged
+                && StasisDesaturationRenderer.passCount() > 0) {
+            stasisGrayscaleLogged = true;
+            LOGGER.info("[HI-MATRIX] STASIS_GRAYSCALE shaderReady={} stencilReady={} beginCount={} passCount={} executed={}",
+                    StasisDesaturationRenderer.shaderReady(),
+                    StasisDesaturationRenderer.stencilReady(),
+                    StasisDesaturationRenderer.beginCount(),
+                    StasisDesaturationRenderer.passCount(),
+                    StasisDesaturationRenderer.passCount() > 0);
         }
 
         if ("CANCEL".equals(scenario)
