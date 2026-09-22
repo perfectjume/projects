@@ -78,8 +78,6 @@ dependencies {
     implementation "maven.modrinth:gedNE4y2:HJZB6bmA"
     implementation "maven.modrinth:9s6osm5g:DqgODWcH"
     implementation "curse.maven:better-mob-combat-reimagined-1606434:8867297"
-    implementation "maven.modrinth:BVzZfTc1:YEMROAHv"
-    implementation "maven.modrinth:4I1XuqiY:PAYgk63v"
 }
 GRADLE
 
@@ -117,19 +115,12 @@ echo "=== exact mod JAR verification ==="
 BC_JAR="$(find "$HOME/.gradle/caches/modules-2/files-2.1/maven.modrinth/5sy6g3kz/VhIOvcXP" -type f -name '*.jar' | head -1)"
 PAL_JAR="$(find "$HOME/.gradle/caches/modules-2/files-2.1/maven.modrinth/gedNE4y2/HJZB6bmA" -type f -name '*.jar' | head -1)"
 BMC_JAR="$(find "$HOME/.gradle/caches/modules-2/files-2.1/curse.maven/better-mob-combat-reimagined-1606434/8867297" -type f -name '*.jar' | head -1)"
-ETF_JAR="$(find "$HOME/.gradle/caches/modules-2/files-2.1/maven.modrinth/BVzZfTc1/YEMROAHv" -type f -name '*.jar' | head -1)"
-EMF_JAR="$(find "$HOME/.gradle/caches/modules-2/files-2.1/maven.modrinth/4I1XuqiY/PAYgk63v" -type f -name '*.jar' | head -1)"
 test -n "$BC_JAR" && test -f "$BC_JAR"
 test -n "$PAL_JAR" && test -f "$PAL_JAR"
 test -n "$BMC_JAR" && test -f "$BMC_JAR"
-test -n "$ETF_JAR" && test -f "$ETF_JAR"
-test -n "$EMF_JAR" && test -f "$EMF_JAR"
 echo "0446e9faa98b764ba010ac31e337d14ac96bbb2fbfeff9b599e1efd510dfde5a  $BC_JAR" | sha256sum -c -
 echo "dbe5de45f5cd60c0e5e47af14e6d564534a98456e973cf670cb881f6938eee92  $PAL_JAR" | sha256sum -c -
 echo "74c15f6b61ddbf2f08a42e8d340f70ff9b802d4fd17e067dadb5baa774f3f187  $BMC_JAR" | sha256sum -c -
-echo "b2e396543c678b8378a2d5557a0cd3d24790364bff7e96edaf17921112d6176b  $ETF_JAR" | sha256sum -c -
-echo "84c22f2be06ee6bfab265a443e075225878bba9f408843030dc6de3152e9dedb  $EMF_JAR" | sha256sum -c -
-echo "EXACT_EMF_ETF_SHA256_PASS"
 echo "EXACT_MODDED_STACK_SHA256_PASS"
 
 test -f build/classes/java/main/com/misanthropy/hit_indicator/server/ParticleCompat.class
@@ -606,6 +597,29 @@ test -f run/world/level.dat
 rm -rf run/saves/RuntimeTest
 mkdir -p run/saves/RuntimeTest
 cp -a run/world/. run/saves/RuntimeTest/
+)
+
+echo "=== V24 EMF client-only dependency setup ==="
+(
+set -euo pipefail
+cd mdk
+cat >> build.gradle <<'GRADLE'
+
+dependencies {
+    implementation "maven.modrinth:BVzZfTc1:YEMROAHv"
+    implementation "maven.modrinth:4I1XuqiY:PAYgk63v"
+}
+GRADLE
+
+./gradlew --no-daemon compileJava
+
+ETF_JAR="$(find "$HOME/.gradle/caches/modules-2/files-2.1/maven.modrinth/BVzZfTc1/YEMROAHv" -type f -name '*.jar' | head -1)"
+EMF_JAR="$(find "$HOME/.gradle/caches/modules-2/files-2.1/maven.modrinth/4I1XuqiY/PAYgk63v" -type f -name '*.jar' | head -1)"
+test -n "$ETF_JAR" && test -f "$ETF_JAR"
+test -n "$EMF_JAR" && test -f "$EMF_JAR"
+echo "b2e396543c678b8378a2d5557a0cd3d24790364bff7e96edaf17921112d6176b  $ETF_JAR" | sha256sum -c -
+echo "84c22f2be06ee6bfab265a443e075225878bba9f408843030dc6de3152e9dedb  $EMF_JAR" | sha256sum -c -
+echo "EXACT_EMF_ETF_SHA256_PASS"
 )
 
 echo "=== V24 EMF MODDED literal client ==="
