@@ -22,6 +22,7 @@ import org.joml.Matrix4f;
         bus = EventBusSubscriber.Bus.GAME)
 public final class TelegraphRenderer {
     private static final int SEGMENTS = 72;
+    private static int renderedFrames;
 
     private TelegraphRenderer() {}
 
@@ -76,6 +77,13 @@ public final class TelegraphRenderer {
         }
 
         buffers.endBatch(RenderType.lines());
+        if (!TelegraphState.activeView().isEmpty()) {
+            renderedFrames++;
+        }
+    }
+
+    public static int renderedFrames() {
+        return renderedFrames;
     }
 
     private static void drawCircle(
