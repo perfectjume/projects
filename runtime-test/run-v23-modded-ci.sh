@@ -479,7 +479,7 @@ required=[
 for p in required:
     assert p in z.namelist(), p
 frag=z.read('assets/hit_indicator/shaders/core/stasis_desaturate.fsh').decode()
-assert '0.92' in frag and 'dot(color.rgb' in frag
+assert 'vec4(vec3(gray), color.a)' in frag and 'dot(color.rgb' in frag
 print('V23_UNIVERSAL_STASIS_GRAYSCALE_PACKAGE_PASS')
 PY
 
