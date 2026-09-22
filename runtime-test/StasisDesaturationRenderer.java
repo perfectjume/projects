@@ -1,12 +1,14 @@
 package com.misanthropy.hit_indicator.client;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import java.nio.ByteBuffer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.ShaderInstance;
@@ -15,34 +17,30 @@ import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.neoforge.client.GlStateBackup;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL12;
-
-import java.nio.ByteBuffer;
 
 public final class StasisDesaturationRenderer {
     private static ShaderInstance shader;
-    private static int snapshotTexture = -1;
-    private static int snapshotWidth = -1;
-    private static int snapshotHeight = -1;
+    private static TextureTarget entityTarget;
 
     private static boolean active;
-    private static boolean stencilWasEnabled;
     private static int oldTexture0;
     private static ShaderInstance oldShader;
     private static int beginCount;
     private static int passCount;
+    private static final GlStateBackup GL_BACKUP = new GlStateBackup();
+
+    // One-shot pixel-level proof used by the runtime matrix.
     private static boolean diagnosticCaptured;
-    private static int stencilPixelCount;
-    private static int stencilOnePixelCount;
+    private static int entityPixelCount;
     private static int diagnosticBeforeR = -1;
     private static int diagnosticBeforeG = -1;
     private static int diagnosticBeforeB = -1;
+    private static int diagnosticBeforeA = -1;
     private static int diagnosticAfterR = -1;
     private static int diagnosticAfterG = -1;
     private static int diagnosticAfterB = -1;
     private static int diagnosticX = -1;
     private static int diagnosticY = -1;
-    private static final GlStateBackup GL_BACKUP = new GlStateBackup();
 
     private StasisDesaturationRenderer() {}
 
@@ -55,6 +53,12 @@ public final class StasisDesaturationRenderer {
                 && (WindupTracker.shouldFreeze(living) || FrozenRenderClock.isReleaseBridge(entity));
     }
 
+    /**
+     * Redirect one frozen entity into a transparent framebuffer. We copy the
+     * current world depth first, so the entity still respects walls/terrain.
+     * The renderer itself is untouched: vanilla, PlayerAnimator, GeckoLib,
+     * AzureLib, etc. all render through their normal code into this target.
+     */
     public static void begin(Entity entity, MultiBufferSource bufferSource) {
         active = false;
         if (!isVisualStasis(entity) || shader == null) {
@@ -63,30 +67,28 @@ public final class StasisDesaturationRenderer {
 
         Minecraft mc = Minecraft.getInstance();
         RenderTarget main = mc.getMainRenderTarget();
-        if (!main.isStencilEnabled()) {
-            main.enableStencil();
-        }
 
         flush(bufferSource);
-
         RenderSystem.backupGlState(GL_BACKUP);
-        stencilWasEnabled = GL11.glIsEnabled(GL11.GL_STENCIL_TEST);
         oldTexture0 = RenderSystem.getShaderTexture(0);
         oldShader = RenderSystem.getShader();
 
-        main.bindWrite(false);
-        RenderSystem.clearStencil(0);
-        RenderSystem.stencilMask(0xFF);
-        RenderSystem.clear(GL11.GL_STENCIL_BUFFER_BIT, Minecraft.ON_OSX);
+        ensureEntityTarget(main.width, main.height);
+        entityTarget.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
+        entityTarget.clear(Minecraft.ON_OSX);
+        entityTarget.copyDepthFrom(main);
+        entityTarget.bindWrite(false);
 
-        GL11.glEnable(GL11.GL_STENCIL_TEST);
-        RenderSystem.stencilMask(0xFF);
-        RenderSystem.stencilFunc(GL11.GL_ALWAYS, 1, 0xFF);
-        RenderSystem.stencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
         active = true;
         beginCount++;
     }
 
+    /**
+     * Flush the entity while the offscreen framebuffer is bound, then composite
+     * only its non-transparent pixels back onto the main framebuffer in
+     * grayscale. Finally copy the updated depth back so later entities still
+     * occlude correctly.
+     */
     public static void end(Entity entity, MultiBufferSource bufferSource) {
         if (!active) {
             return;
@@ -96,43 +98,26 @@ public final class StasisDesaturationRenderer {
         Minecraft mc = Minecraft.getInstance();
         RenderTarget main = mc.getMainRenderTarget();
 
-        // Entity vertices are normally batched. Flush them while stencil writes
-        // are still active so every ordinary entity RenderType contributes to
-        // the mask without needing renderer-specific compatibility.
-        GL11.glEnable(GL11.GL_STENCIL_TEST);
-        RenderSystem.stencilMask(0xFF);
-        RenderSystem.stencilFunc(GL11.GL_ALWAYS, 1, 0xFF);
-        RenderSystem.stencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
+        // Force all deferred entity RenderTypes to land in entityTarget.
         flush(bufferSource);
 
-        ensureSnapshot(main.width, main.height);
-        main.bindWrite(false);
-
-        // Snapshot the already-rendered color buffer. This captures whatever
-        // vanilla/modded renderer produced, including PlayerAnimator/GeckoLib.
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshotTexture);
-        GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, main.width, main.height);
-
-        // One-time runtime diagnostic: prove the entity actually populated the
-        // stencil buffer and choose the most saturated marked pixel so the test
-        // can verify that this exact pixel becomes desaturated after the pass.
         if (!diagnosticCaptured) {
-            captureBeforeDiagnostic(main.width, main.height);
+            captureBeforeDiagnostic(entityTarget.width, entityTarget.height);
         }
 
-        // Replace only stencil-marked pixels with a grayscale sample from the
-        // snapshot. No entity model/texture knowledge is required here.
-        RenderSystem.stencilMask(0x00);
-        RenderSystem.stencilFunc(GL11.GL_EQUAL, 1, 0xFF);
-        RenderSystem.stencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+        // entityTarget began with main depth and now also contains this entity's
+        // depth. Preserve that for everything rendered afterward.
+        main.copyDepthFrom(entityTarget);
+        main.bindWrite(false);
 
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
-        RenderSystem.disableBlend();
         RenderSystem.disableCull();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
 
         RenderSystem.setShader(() -> shader);
-        RenderSystem.setShaderTexture(0, snapshotTexture);
+        RenderSystem.setShaderTexture(0, entityTarget.getColorTextureId());
 
         BufferBuilder builder = Tesselator.getInstance().begin(
                 VertexFormat.Mode.QUADS,
@@ -152,24 +137,10 @@ public final class StasisDesaturationRenderer {
         }
 
         RenderSystem.setShaderTexture(0, oldTexture0);
-
-        // Clear our temporary entity mask before restoring the caller's exact
-        // stencil parameters. GlStateBackup stores the parameters but not the
-        // enabled/disabled bit, so that bit is restored separately below.
-        RenderSystem.stencilMask(0xFF);
-        RenderSystem.clearStencil(0);
-        RenderSystem.clear(GL11.GL_STENCIL_BUFFER_BIT, Minecraft.ON_OSX);
-
         RenderSystem.restoreGlState(GL_BACKUP);
         if (oldShader != null) {
             RenderSystem.setShader(() -> oldShader);
         }
-        if (stencilWasEnabled) {
-            GL11.glEnable(GL11.GL_STENCIL_TEST);
-        } else {
-            GL11.glDisable(GL11.GL_STENCIL_TEST);
-        }
-
         main.bindWrite(false);
     }
 
@@ -177,8 +148,8 @@ public final class StasisDesaturationRenderer {
         return shader != null;
     }
 
-    public static boolean stencilReady() {
-        return Minecraft.getInstance().getMainRenderTarget().isStencilEnabled();
+    public static boolean targetReady() {
+        return entityTarget != null;
     }
 
     public static int beginCount() {
@@ -189,12 +160,8 @@ public final class StasisDesaturationRenderer {
         return passCount;
     }
 
-    public static int stencilPixelCount() {
-        return stencilPixelCount;
-    }
-
-    public static int stencilOnePixelCount() {
-        return stencilOnePixelCount;
+    public static int entityPixelCount() {
+        return entityPixelCount;
     }
 
     public static int diagnosticBeforeSpread() {
@@ -205,60 +172,86 @@ public final class StasisDesaturationRenderer {
         return spread(diagnosticAfterR, diagnosticAfterG, diagnosticAfterB);
     }
 
+    public static int diagnosticBeforeAlpha() {
+        return diagnosticBeforeA;
+    }
+
     public static String diagnosticRgb() {
-        return diagnosticBeforeR + "," + diagnosticBeforeG + "," + diagnosticBeforeB
+        return diagnosticBeforeR + "," + diagnosticBeforeG + "," + diagnosticBeforeB + "," + diagnosticBeforeA
                 + "->" + diagnosticAfterR + "," + diagnosticAfterG + "," + diagnosticAfterB;
     }
 
+    private static void ensureEntityTarget(int width, int height) {
+        if (entityTarget == null) {
+            entityTarget = new TextureTarget(width, height, true, Minecraft.ON_OSX);
+            entityTarget.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
+        } else if (entityTarget.width != width || entityTarget.height != height) {
+            entityTarget.resize(width, height, Minecraft.ON_OSX);
+        }
+    }
+
+    /**
+     * The test mob is kept under the crosshair. Reading only a small central
+     * region avoids the large synchronous full-frame readback that made the
+     * earlier stencil diagnostic stall llvmpipe/Xvfb.
+     */
     private static void captureBeforeDiagnostic(int width, int height) {
-        ByteBuffer stencil = BufferUtils.createByteBuffer(width * height);
-        ByteBuffer color = BufferUtils.createByteBuffer(width * height * 4);
-        GL11.glReadPixels(0, 0, width, height, GL11.GL_STENCIL_INDEX, GL11.GL_UNSIGNED_BYTE, stencil);
-        GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, color);
+        int regionWidth = Math.min(220, width);
+        int regionHeight = Math.min(280, height);
+        int x0 = Math.max(0, width / 2 - regionWidth / 2);
+        int y0 = Math.max(0, height / 2 - regionHeight / 2);
+
+        ByteBuffer color = BufferUtils.createByteBuffer(regionWidth * regionHeight * 4);
+        GL11.glReadPixels(
+                x0,
+                y0,
+                regionWidth,
+                regionHeight,
+                GL11.GL_RGBA,
+                GL11.GL_UNSIGNED_BYTE,
+                color);
 
         int bestSpread = -1;
-        int count = 0;
         int bestX = -1;
         int bestY = -1;
         int bestR = -1;
         int bestG = -1;
         int bestB = -1;
+        int bestA = -1;
+        int count = 0;
 
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int index = y * width + x;
-                int stencilValue = stencil.get(index) & 0xFF;
-                if (stencilValue == 0) {
+        for (int y = 0; y < regionHeight; y++) {
+            for (int x = 0; x < regionWidth; x++) {
+                int index = (y * regionWidth + x) * 4;
+                int a = color.get(index + 3) & 0xFF;
+                if (a < 245) {
                     continue;
                 }
                 count++;
-                if (stencilValue != 1) {
-                    continue;
-                }
-                stencilOnePixelCount++;
 
-                int colorIndex = index * 4;
-                int r = color.get(colorIndex) & 0xFF;
-                int g = color.get(colorIndex + 1) & 0xFF;
-                int b = color.get(colorIndex + 2) & 0xFF;
+                int r = color.get(index) & 0xFF;
+                int g = color.get(index + 1) & 0xFF;
+                int b = color.get(index + 2) & 0xFF;
                 int spread = spread(r, g, b);
                 if (spread > bestSpread) {
                     bestSpread = spread;
-                    bestX = x;
-                    bestY = y;
+                    bestX = x0 + x;
+                    bestY = y0 + y;
                     bestR = r;
                     bestG = g;
                     bestB = b;
+                    bestA = a;
                 }
             }
         }
 
-        stencilPixelCount = count;
+        entityPixelCount = count;
         diagnosticX = bestX;
         diagnosticY = bestY;
         diagnosticBeforeR = bestR;
         diagnosticBeforeG = bestG;
         diagnosticBeforeB = bestB;
+        diagnosticBeforeA = bestA;
     }
 
     private static void captureAfterDiagnostic() {
@@ -285,34 +278,5 @@ public final class StasisDesaturationRenderer {
         if (bufferSource instanceof MultiBufferSource.BufferSource buffers) {
             buffers.endBatch();
         }
-    }
-
-    private static void ensureSnapshot(int width, int height) {
-        if (snapshotTexture != -1 && snapshotWidth == width && snapshotHeight == height) {
-            return;
-        }
-
-        if (snapshotTexture == -1) {
-            snapshotTexture = GL11.glGenTextures();
-        }
-
-        snapshotWidth = width;
-        snapshotHeight = height;
-
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshotTexture);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
-        GL11.glTexImage2D(
-                GL11.GL_TEXTURE_2D,
-                0,
-                GL11.GL_RGBA8,
-                width,
-                height,
-                0,
-                GL11.GL_RGBA,
-                GL11.GL_UNSIGNED_BYTE,
-                (java.nio.ByteBuffer) null);
     }
 }
