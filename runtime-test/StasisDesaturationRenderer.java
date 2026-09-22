@@ -13,8 +13,11 @@ import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.neoforge.client.GlStateBackup;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+
+import java.nio.ByteBuffer;
 
 public final class StasisDesaturationRenderer {
     private static ShaderInstance shader;
@@ -28,6 +31,16 @@ public final class StasisDesaturationRenderer {
     private static ShaderInstance oldShader;
     private static int beginCount;
     private static int passCount;
+    private static boolean diagnosticCaptured;
+    private static int stencilPixelCount;
+    private static int diagnosticBeforeR = -1;
+    private static int diagnosticBeforeG = -1;
+    private static int diagnosticBeforeB = -1;
+    private static int diagnosticAfterR = -1;
+    private static int diagnosticAfterG = -1;
+    private static int diagnosticAfterB = -1;
+    private static int diagnosticX = -1;
+    private static int diagnosticY = -1;
     private static final GlStateBackup GL_BACKUP = new GlStateBackup();
 
     private StasisDesaturationRenderer() {}
@@ -99,6 +112,13 @@ public final class StasisDesaturationRenderer {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshotTexture);
         GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, main.width, main.height);
 
+        // One-time runtime diagnostic: prove the entity actually populated the
+        // stencil buffer and choose the most saturated marked pixel so the test
+        // can verify that this exact pixel becomes desaturated after the pass.
+        if (!diagnosticCaptured) {
+            captureBeforeDiagnostic(main.width, main.height);
+        }
+
         // Replace only stencil-marked pixels with a grayscale sample from the
         // snapshot. No entity model/texture knowledge is required here.
         RenderSystem.stencilMask(0x00);
@@ -122,6 +142,13 @@ public final class StasisDesaturationRenderer {
         builder.addVertex(-1.0F,  1.0F, 0.0F).setUv(0.0F, 1.0F);
         BufferUploader.drawWithShader(builder.buildOrThrow());
         passCount++;
+
+        if (!diagnosticCaptured && diagnosticX >= 0) {
+            captureAfterDiagnostic();
+            diagnosticCaptured = true;
+        } else if (!diagnosticCaptured) {
+            diagnosticCaptured = true;
+        }
 
         RenderSystem.setShaderTexture(0, oldTexture0);
 
@@ -159,6 +186,89 @@ public final class StasisDesaturationRenderer {
 
     public static int passCount() {
         return passCount;
+    }
+
+    public static int stencilPixelCount() {
+        return stencilPixelCount;
+    }
+
+    public static int diagnosticBeforeSpread() {
+        return spread(diagnosticBeforeR, diagnosticBeforeG, diagnosticBeforeB);
+    }
+
+    public static int diagnosticAfterSpread() {
+        return spread(diagnosticAfterR, diagnosticAfterG, diagnosticAfterB);
+    }
+
+    public static String diagnosticRgb() {
+        return diagnosticBeforeR + "," + diagnosticBeforeG + "," + diagnosticBeforeB
+                + "->" + diagnosticAfterR + "," + diagnosticAfterG + "," + diagnosticAfterB;
+    }
+
+    private static void captureBeforeDiagnostic(int width, int height) {
+        ByteBuffer stencil = BufferUtils.createByteBuffer(width * height);
+        ByteBuffer color = BufferUtils.createByteBuffer(width * height * 4);
+        GL11.glReadPixels(0, 0, width, height, GL11.GL_STENCIL_INDEX, GL11.GL_UNSIGNED_BYTE, stencil);
+        GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, color);
+
+        int bestSpread = -1;
+        int count = 0;
+        int bestX = -1;
+        int bestY = -1;
+        int bestR = -1;
+        int bestG = -1;
+        int bestB = -1;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int index = y * width + x;
+                if ((stencil.get(index) & 0xFF) == 0) {
+                    continue;
+                }
+                count++;
+
+                int colorIndex = index * 4;
+                int r = color.get(colorIndex) & 0xFF;
+                int g = color.get(colorIndex + 1) & 0xFF;
+                int b = color.get(colorIndex + 2) & 0xFF;
+                int spread = spread(r, g, b);
+                if (spread > bestSpread) {
+                    bestSpread = spread;
+                    bestX = x;
+                    bestY = y;
+                    bestR = r;
+                    bestG = g;
+                    bestB = b;
+                }
+            }
+        }
+
+        stencilPixelCount = count;
+        diagnosticX = bestX;
+        diagnosticY = bestY;
+        diagnosticBeforeR = bestR;
+        diagnosticBeforeG = bestG;
+        diagnosticBeforeB = bestB;
+    }
+
+    private static void captureAfterDiagnostic() {
+        ByteBuffer pixel = BufferUtils.createByteBuffer(4);
+        GL11.glReadPixels(
+                diagnosticX,
+                diagnosticY,
+                1,
+                1,
+                GL11.GL_RGBA,
+                GL11.GL_UNSIGNED_BYTE,
+                pixel);
+        diagnosticAfterR = pixel.get(0) & 0xFF;
+        diagnosticAfterG = pixel.get(1) & 0xFF;
+        diagnosticAfterB = pixel.get(2) & 0xFF;
+    }
+
+    private static int spread(int r, int g, int b) {
+        if (r < 0 || g < 0 || b < 0) return -1;
+        return Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b));
     }
 
     private static void flush(MultiBufferSource bufferSource) {
