@@ -292,8 +292,7 @@ public final class RuntimeTestClient {
                     StasisDesaturationRenderer.diagnosticRgb());
         }
 
-        if ("FREEZE".equals(scenario)
-                && !stasisGrayscaleLogged
+        if (!stasisGrayscaleLogged
                 && StasisDesaturationRenderer.passCount() > 0) {
             stasisGrayscaleLogged = true;
             int beforeSpread = StasisDesaturationRenderer.diagnosticBeforeSpread();
