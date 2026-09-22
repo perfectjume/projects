@@ -2,6 +2,7 @@ package com.example.examplemod;
 
 import com.misanthropy.hit_indicator.client.CameraShake;
 import com.misanthropy.hit_indicator.client.FrozenRenderClock;
+import com.misanthropy.hit_indicator.client.EmfPoseFreeze;
 import com.misanthropy.hit_indicator.client.StasisDesaturationRenderer;
 import com.misanthropy.hit_indicator.client.WindupTracker;
 import com.misanthropy.hit_indicator.client.WindupTracker.Windup;
@@ -43,6 +44,8 @@ public final class RuntimeTestClient {
     private static boolean directFreezeProbeLogged;
     private static boolean renderClockFreezeProbeLogged;
     private static boolean stasisGrayscaleLogged;
+    private static boolean emfPoseSelfTestLogged;
+    private static boolean emfPoseRuntimeLogged;
     private static boolean stasisDiagnosticLogged;
     private static boolean moddedStackLogged;
     private static boolean releasePredicateFalseLogged;
@@ -60,6 +63,24 @@ public final class RuntimeTestClient {
         if (mc.level == null) return;
 
         String scenario = RuntimeTestMod.currentScenario();
+
+        if (!emfPoseSelfTestLogged) {
+            emfPoseSelfTestLogged = true;
+            LOGGER.info("[HI-MATRIX] EMF_POSE_PARTSTATE_SELFTEST pass={}",
+                    EmfPoseFreeze.partStateRoundTripForTest());
+        }
+
+        if (!emfPoseRuntimeLogged
+                && net.neoforged.fml.ModList.get().isLoaded("entity_model_features")
+                && EmfPoseFreeze.captures() > 0
+                && EmfPoseFreeze.restores() > 0) {
+            emfPoseRuntimeLogged = true;
+            LOGGER.info("[HI-MATRIX] EMF_POSE_RUNTIME captures={} restores={} clears={} mismatches={}",
+                    EmfPoseFreeze.captures(),
+                    EmfPoseFreeze.restores(),
+                    EmfPoseFreeze.clears(),
+                    EmfPoseFreeze.mismatches());
+        }
         if (!moddedStackLogged) {
             moddedStackLogged = true;
             LOGGER.info("[HI-MATRIX] MODDED_STACK_LOADED bettercombat={} playeranimator={} betterMobCombat={}",
