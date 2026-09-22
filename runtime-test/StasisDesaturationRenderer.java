@@ -33,6 +33,7 @@ public final class StasisDesaturationRenderer {
     private static int passCount;
     private static boolean diagnosticCaptured;
     private static int stencilPixelCount;
+    private static int stencilOnePixelCount;
     private static int diagnosticBeforeR = -1;
     private static int diagnosticBeforeG = -1;
     private static int diagnosticBeforeB = -1;
@@ -192,6 +193,10 @@ public final class StasisDesaturationRenderer {
         return stencilPixelCount;
     }
 
+    public static int stencilOnePixelCount() {
+        return stencilOnePixelCount;
+    }
+
     public static int diagnosticBeforeSpread() {
         return spread(diagnosticBeforeR, diagnosticBeforeG, diagnosticBeforeB);
     }
@@ -222,10 +227,15 @@ public final class StasisDesaturationRenderer {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 int index = y * width + x;
-                if ((stencil.get(index) & 0xFF) == 0) {
+                int stencilValue = stencil.get(index) & 0xFF;
+                if (stencilValue == 0) {
                     continue;
                 }
                 count++;
+                if (stencilValue != 1) {
+                    continue;
+                }
+                stencilOnePixelCount++;
 
                 int colorIndex = index * 4;
                 int r = color.get(colorIndex) & 0xFF;
