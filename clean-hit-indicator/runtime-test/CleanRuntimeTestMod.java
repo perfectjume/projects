@@ -28,7 +28,7 @@ public final class CleanRuntimeTestMod {
     private static int triggerTick = -1;
     private static int frozenTickCount;
     private static float healthBefore;
-    private static boolean completed;
+    private static boolean completed; // Runtime matrix state.
 
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
