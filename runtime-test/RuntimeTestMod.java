@@ -397,7 +397,11 @@ public final class RuntimeTestMod {
         for (int i = 0; i < 3; i++) {
             Zombie z = zombie(1.5D + i * 0.1D);
             zombies.add(z);
-            z.doHurtTarget(player);
+            if (ModList.get().isLoaded("better_mob_combat_reimagined")) {
+                player.hurt(player.damageSources().mobAttack(z), 4.0F);
+            } else {
+                z.doHurtTarget(player);
+            }
             z.setNoAi(true);
         }
         int winding = 0;
