@@ -158,7 +158,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -q '\[CLEAN-HI\] ATTACK_TRIGGER .*frozen=true' clean-client-latest.log
-          grep -q '\[CLEAN-HI\] SERVER_RESULT dealt=4.0 tickStable=true' clean-client-latest.log
+          grep -Eq '\[CLEAN-HI\] SERVER_RESULT dealt=4.0 frozenStable=true resumeDelta=[01]' clean-client-latest.log
           grep -q '\[CLEAN-HI\] SERVER_CLEAN_PASS' clean-client-latest.log
           grep -Eq '\[CLEAN-HI\] CLIENT_VISUAL_PROGRESS ringFrames=[1-9][0-9]* grayscalePasses=[1-9][0-9]*' clean-client-latest.log
           grep -Eq '\[CLEAN-HI\] CLIENT_CLEAN_PASS ringFrames=[1-9][0-9]* grayscalePasses=[1-9][0-9]* resumedTick=' clean-client-latest.log
