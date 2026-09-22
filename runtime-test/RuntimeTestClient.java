@@ -215,10 +215,10 @@ public final class RuntimeTestClient {
 
         if (!stasisDiagnosticLogged && StasisDesaturationRenderer.passCount() > 0) {
             stasisDiagnosticLogged = true;
-            LOGGER.info("[HI-MATRIX] STASIS_PIXEL_DIAGNOSTIC scenario={} stencilPixels={} stencilOnePixels={} beforeSpread={} afterSpread={} rgb={}",
+            LOGGER.info("[HI-MATRIX] STASIS_PIXEL_DIAGNOSTIC scenario={} entityPixels={} beforeAlpha={} beforeSpread={} afterSpread={} rgb={}",
                     scenario,
-                    StasisDesaturationRenderer.stencilPixelCount(),
-                    StasisDesaturationRenderer.stencilOnePixelCount(),
+                    StasisDesaturationRenderer.entityPixelCount(),
+                    StasisDesaturationRenderer.diagnosticBeforeAlpha(),
                     StasisDesaturationRenderer.diagnosticBeforeSpread(),
                     StasisDesaturationRenderer.diagnosticAfterSpread(),
                     StasisDesaturationRenderer.diagnosticRgb());
@@ -231,18 +231,19 @@ public final class RuntimeTestClient {
             int beforeSpread = StasisDesaturationRenderer.diagnosticBeforeSpread();
             int afterSpread = StasisDesaturationRenderer.diagnosticAfterSpread();
             boolean pixelDesaturated =
-                    StasisDesaturationRenderer.stencilOnePixelCount() > 0
+                    StasisDesaturationRenderer.entityPixelCount() > 0
+                    && StasisDesaturationRenderer.diagnosticBeforeAlpha() >= 245
                     && beforeSpread > 10
                     && afterSpread >= 0
                     && afterSpread <= Math.max(4, beforeSpread / 4);
-            LOGGER.info("[HI-MATRIX] STASIS_GRAYSCALE shaderReady={} stencilReady={} beginCount={} passCount={} executed={} stencilPixels={} stencilOnePixels={} beforeSpread={} afterSpread={} pixelDesaturated={} rgb={}",
+            LOGGER.info("[HI-MATRIX] STASIS_GRAYSCALE shaderReady={} targetReady={} beginCount={} passCount={} executed={} entityPixels={} beforeAlpha={} beforeSpread={} afterSpread={} pixelDesaturated={} rgb={}",
                     StasisDesaturationRenderer.shaderReady(),
-                    StasisDesaturationRenderer.stencilReady(),
+                    StasisDesaturationRenderer.targetReady(),
                     StasisDesaturationRenderer.beginCount(),
                     StasisDesaturationRenderer.passCount(),
                     StasisDesaturationRenderer.passCount() > 0,
-                    StasisDesaturationRenderer.stencilPixelCount(),
-                    StasisDesaturationRenderer.stencilOnePixelCount(),
+                    StasisDesaturationRenderer.entityPixelCount(),
+                    StasisDesaturationRenderer.diagnosticBeforeAlpha(),
                     beforeSpread,
                     afterSpread,
                     pixelDesaturated,
