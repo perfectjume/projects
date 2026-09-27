@@ -107,6 +107,7 @@ jobs:
           path: |
             stage1.log
             stage2.log
+            runtime/yagm-20260927/yagm_orbit10_autoloot.jar
             mdk/run/yagm-runtime-stage.properties
             mdk/run/yagm-runtime-complete.txt
             mdk/run/yagm-runtime-failure.txt
