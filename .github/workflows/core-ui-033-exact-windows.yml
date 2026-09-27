@@ -92,7 +92,20 @@ jobs:
           $marker=Get-Content -LiteralPath (Join-Path $runtime '.core-ui-runtime-ok') -Raw
           if($marker -notmatch '11c395820a5aaa8ebcc0686b476d0ac98a730274ebfbdc8cf5538a7c2815cb5d'){throw 'runtime SHA marker mismatch'}
           if($gt -notmatch 'CORE UI GPU renderer 0\.3\.3 starting'){throw 'renderer startup marker missing'}
-          if($gt -notmatch 'Offscreen HTML renderer loaded'){throw 'HTML load marker missing'}
+          # did-finish-load is asynchronous and may occur after the TCP listener is ready.
+          $htmlLoaded=$false
+          for($i=0;$i -lt 120;$i++){
+            if((Test-Path $gpu) -and ((Get-Content $gpu -Raw) -match 'Offscreen HTML renderer loaded')){
+              $htmlLoaded=$true
+              break
+            }
+            Start-Sleep -Milliseconds 250
+          }
+          if(-not $htmlLoaded){
+            if(Test-Path $gpu){Copy-Item $gpu exact-gpu.log -Force}
+            throw 'HTML did-finish-load marker did not appear within 30 seconds'
+          }
+          Copy-Item $gpu exact-gpu.log -Force
           if($gt -notmatch 'Listening on 127\.0\.0\.1:37541'){throw 'TCP listen marker missing'}
 
           'CLEAN_FIRST_RUN_DOWNLOAD=PASS' | Add-Content exact-windows-result.txt
