@@ -170,8 +170,9 @@ public final class RuntimeTestMod {
     }
 
     private void verifyOutsideDefaultRadius() throws Exception {
-        if (ticks < 2) return;
-        require(isGraveEntity(level.getBlockEntity(grave1)), "grave auto-looted from 17 blocks; default radius exceeded 16");
+        if (ticks < 120) return;
+        require(isGraveEntity(level.getBlockEntity(grave1)), "grave auto-looted/despawned while owner stayed at 17 blocks");
+        log("grave survived restart plus 120 loaded server ticks without despawning");
         require(countItem(p1, Items.DIAMOND) == 0, "items returned outside default 16-block radius");
 
         p1.setPos(grave1.getX() + 15.5D, grave1.getY(), grave1.getZ() + 0.5D);
@@ -288,7 +289,7 @@ public final class RuntimeTestMod {
                 "PASS\n"
                 + "registered Architectury LIVING_DEATH event: PASS\n"
                 + "nearby mob does not block exact grave spawn: PASS\n"
-                + "grave persistence across server restart: PASS\n"
+                + "grave persistence across server restart + 120 loaded ticks: PASS\n"
                 + "default auto-loot radius 16: PASS\n"
                 + "configurable auto-loot radius 3: PASS\n"
                 + "occupied death block not replaced; nearby placement: PASS\n"
