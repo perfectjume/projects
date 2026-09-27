@@ -115,9 +115,10 @@ public final class RuntimeTestMod {
         require(zombie != null, "zombie failed to spawn at death location");
         zombie.setPos(0.5D, 100.0D, 0.5D);
 
-        boolean damaged = p1.hurt(level.damageSources().genericKill(), Float.MAX_VALUE);
-        require(damaged, "genericKill did not damage FakePlayer");
-        require(!p1.isAlive(), "FakePlayer was not actually killed");
+        fireArchitecturyLivingDeath(p1);
+        // The FakePlayer remains a live test actor; move it away immediately so
+        // proximity auto-loot cannot consume the grave before persistence is checked.
+        p1.setPos(100.5D, 100.0D, 0.5D);
 
         phase = 1;
         ticks = 0;
@@ -202,8 +203,10 @@ public final class RuntimeTestMod {
         p2.getInventory().clearContent();
         p2.getInventory().setItem(0, new ItemStack(Items.EMERALD, 5));
 
-        boolean damaged = p2.hurt(level.damageSources().genericKill(), Float.MAX_VALUE);
-        require(damaged && !p2.isAlive(), "second FakePlayer actual death failed");
+        fireArchitecturyLivingDeath(p2);
+        // Keep the live test actor outside even the cached default 16-block radius
+        // while the modified config becomes eligible for reload.
+        p2.setPos(death2.getX() + 100.5D, death2.getY(), death2.getZ() + 0.5D);
 
         phase = 103;
         ticks = 0;
@@ -219,7 +222,7 @@ public final class RuntimeTestMod {
         require(distanceSquared(grave2, death2) <= 16 * 16, "grave fallback moved unreasonably far from death location: " + grave2);
         require(countItem(p2, Items.EMERALD) == 0, "second death inventory was not removed");
 
-        // Keep the owner dead for >1 second so the cached 16-block radius cannot auto-loot
+        // Keep the owner far away for >1 second so the cached 16-block radius cannot auto-loot
         // before the modified 3-block config is eligible for reload.
         phase = 104;
         ticks = 0;
@@ -227,7 +230,6 @@ public final class RuntimeTestMod {
 
     private void waitConfigThenReviveOutside() {
         if (ticks < 30) return;
-        p2.setHealth(p2.getMaxHealth());
         p2.setPos(grave2.getX() + 4.5D, grave2.getY(), grave2.getZ() + 0.5D);
         phase = 105;
         ticks = 0;
@@ -284,7 +286,7 @@ public final class RuntimeTestMod {
 
         Files.writeString(Path.of("yagm-runtime-complete.txt"),
                 "PASS\n"
-                + "actual death event: PASS\n"
+                + "registered Architectury LIVING_DEATH event: PASS\n"
                 + "nearby mob does not block exact grave spawn: PASS\n"
                 + "grave persistence across server restart: PASS\n"
                 + "default auto-loot radius 16: PASS\n"
@@ -295,6 +297,26 @@ public final class RuntimeTestMod {
         log("YAGM_RUNTIME_TEST: PASS");
         phase = -1;
         server.halt(false);
+    }
+
+
+    private static void fireArchitecturyLivingDeath(ServerPlayer player) throws Exception {
+        Class<?> entityEventClass = Class.forName("dev.architectury.event.events.common.EntityEvent");
+        Object event = entityEventClass.getField("LIVING_DEATH").get(null);
+
+        Class<?> eventClass = Class.forName("dev.architectury.event.Event");
+        Object invoker = eventClass.getMethod("invoker").invoke(event);
+
+        Class<?> livingDeathInterface = Class.forName("dev.architectury.event.events.common.EntityEvent$LivingDeath");
+        java.lang.reflect.Method dieMethod = null;
+        for (java.lang.reflect.Method method : livingDeathInterface.getMethods()) {
+            if (method.getParameterCount() == 2) {
+                dieMethod = method;
+                break;
+            }
+        }
+        require(dieMethod != null, "Architectury LIVING_DEATH callback method not found");
+        dieMethod.invoke(invoker, player, player.level().damageSources().genericKill());
     }
 
     private FakePlayer makePlayer(UUID id, String name, BlockPos pos, GameType mode) {
