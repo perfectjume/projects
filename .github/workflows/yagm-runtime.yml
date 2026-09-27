@@ -29,12 +29,16 @@ jobs:
         run: |
           set -euo pipefail
           cat runtime/yagm-20260927/yagm.part* | base64 -d > runtime/yagm-20260927/yagm_orbit10_autoloot.jar
+          echo "Base patched JAR:"
+          sha256sum runtime/yagm-20260927/yagm_orbit10_autoloot.jar
+          test "$(sha256sum runtime/yagm-20260927/yagm_orbit10_autoloot.jar | awk '{print $1}')" = "b688b29fe3aec80ea6d6ffcd708a54afc902bc79edac6f590d41ed8bed122f50"
           mkdir -p /tmp/yagm-overlay/it/hurts/sskirillss/yagm/util
           base64 -d runtime/yagm-20260927/PlaceableUtils_v2.b64 > /tmp/yagm-overlay/it/hurts/sskirillss/yagm/util/PlaceableUtils.class
+          test "$(sha256sum /tmp/yagm-overlay/it/hurts/sskirillss/yagm/util/PlaceableUtils.class | awk '{print $1}')" = "62579a3841a2ee7d158d8d4ef33a7291dc0eff6a450532abf14d9d489263a727"
           jar uf runtime/yagm-20260927/yagm_orbit10_autoloot.jar -C /tmp/yagm-overlay it/hurts/sskirillss/yagm/util/PlaceableUtils.class
-          sha256sum runtime/yagm-20260927/yagm_orbit10_autoloot.jar
-          test "$(sha256sum runtime/yagm-20260927/yagm_orbit10_autoloot.jar | awk '{print $1}')" = "0108844a56343fa6e19f157dcfa31f4d064c53e477e83cdba3c2dde8af20df68"
           jar tf runtime/yagm-20260927/yagm_orbit10_autoloot.jar >/dev/null
+          test "$(unzip -p runtime/yagm-20260927/yagm_orbit10_autoloot.jar it/hurts/sskirillss/yagm/util/PlaceableUtils.class | sha256sum | awk '{print $1}')" = "62579a3841a2ee7d158d8d4ef33a7291dc0eff6a450532abf14d9d489263a727"
+          echo "Runtime JAR executable class overlay verified."
 
       - name: Prepare NeoForge 1.21.1 test mod
         shell: bash
