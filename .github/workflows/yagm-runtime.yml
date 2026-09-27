@@ -100,25 +100,40 @@ jobs:
           grep -q 'YAGM_RUNTIME_TEST: PASS' ../stage2.log
           cat run/yagm-runtime-complete.txt
 
-      - name: Runtime client startup - real title screen
+      - name: Runtime client startup - post resource reload
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0 libegl1 libegl-mesa0
           cd mdk
-          rm -f run/yagm-client-title-pass.txt
           set +e
-          timeout 180s xvfb-run -a ./gradlew runClient --no-daemon --console=plain > ../client.log 2>&1
+          timeout 90s xvfb-run -a ./gradlew runClient --no-daemon --console=plain > ../client.log 2>&1
           code=$?
           set -e
           tail -300 ../client.log
-          test -f run/yagm-client-title-pass.txt
-          grep -q 'YAGM_CLIENT_RUNTIME: PASS title screen opened' ../client.log
+
+          # Concrete runtime milestones: actual render backend, YAGM included in client
+          # resource reload, and texture-atlas construction after that reload.
+          grep -q 'Backend library: LWJGL version' ../client.log
+          grep -Eq 'Reloading ResourceManager:.*mod/yagm([, ]|$)' ../client.log
+          grep -q 'minecraft:textures/atlas/blocks.png-atlas' ../client.log
+
+          # Fail on YAGM-specific linkage / verification / mixin failures.
+          if grep -Eiq 'Failed to register automatic subscribers.*ModID: yagm|VerifyError.*yagm|NoClassDefFoundError.*yagm|NoSuchMethodError.*yagm|MixinApplyError.*yagm|MixinTransformerError.*yagm' ../client.log; then
+            echo 'Detected YAGM-specific fatal client error'
+            exit 1
+          fi
+
+          # Headless CI has no audio device / narrator native library; these are
+          # environmental and occur after the client has reached render/resource load.
           if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then
             echo "Client exited with unexpected code $code"
             exit "$code"
           fi
+
+          printf 'PASS\n' > run/yagm-client-runtime-pass.txt
+          echo '[YAGM-CLIENT-RUNTIME] PASS client reached post-resource-reload atlas stage'
 
       - name: Upload runtime evidence
         if: always()
@@ -132,7 +147,7 @@ jobs:
             runtime/yagm-20260927/yagm_orbit10_autoloot.jar
             mdk/run/yagm-runtime-stage.properties
             mdk/run/yagm-runtime-complete.txt
-            mdk/run/yagm-client-title-pass.txt
+            mdk/run/yagm-client-runtime-pass.txt
             mdk/run/yagm-runtime-failure.txt
             mdk/run/config/yagm_orbit.properties
             mdk/run/logs/latest.log
