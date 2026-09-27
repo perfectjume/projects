@@ -1,0 +1,85 @@
+name: CORE UI D3D11 ABI verification
+
+on:
+  push:
+    branches: [ core-ui-runtime-033-test ]
+    paths:
+      - '.github/workflows/core-ui-d3d11-abi.yml'
+  workflow_dispatch:
+
+jobs:
+  abi:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core-ui-runtime-033-test
+
+      - name: Compile and execute Windows SDK ABI probe
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          #define CINTERFACE
+          #define COBJMACROS
+          #include <windows.h>
+          #include <d3d11_1.h>
+          #include <stdio.h>
+          #include <stddef.h>
+          #include <string.h>
+
+          #define SLOT(type, member) (offsetof(type, member) / sizeof(void*))
+
+          static int guid_eq(const GUID* a, const unsigned char* b) {
+              return memcmp(a,b,16)==0;
+          }
+
+          int main(void) {
+              const unsigned char iid_device1[16] = {
+                  0x29,0xfb,0x4b,0xa0, 0xef,0x08, 0xd6,0x43,
+                  0xa4,0x9c,0xa9,0xbd,0xbd,0xcb,0xe6,0x86
+              };
+              const unsigned char iid_tex2d[16] = {
+                  0xf2,0xaa,0x15,0x6f, 0x08,0xd2, 0x89,0x4e,
+                  0x9a,0xb4,0x48,0x95,0x35,0xd3,0x4f,0x9c
+              };
+
+              size_t create_tex2d = SLOT(ID3D11Device1Vtbl, CreateTexture2D);
+              size_t open_shared1 = SLOT(ID3D11Device1Vtbl, OpenSharedResource1);
+              size_t tex_get_desc = SLOT(ID3D11Texture2DVtbl, GetDesc);
+              size_t copy_resource = SLOT(ID3D11DeviceContextVtbl, CopyResource);
+
+              printf("ID3D11Device1.CreateTexture2D=%zu\n", create_tex2d);
+              printf("ID3D11Device1.OpenSharedResource1=%zu\n", open_shared1);
+              printf("ID3D11Texture2D.GetDesc=%zu\n", tex_get_desc);
+              printf("ID3D11DeviceContext.CopyResource=%zu\n", copy_resource);
+              printf("sizeof(D3D11_TEXTURE2D_DESC)=%zu\n", sizeof(D3D11_TEXTURE2D_DESC));
+              printf("IID_ID3D11Device1_match=%d\n", guid_eq(&IID_ID3D11Device1, iid_device1));
+              printf("IID_ID3D11Texture2D_match=%d\n", guid_eq(&IID_ID3D11Texture2D, iid_tex2d));
+
+              if (create_tex2d != 5) return 11;
+              if (open_shared1 != 48) return 12;
+              if (tex_get_desc != 10) return 13;
+              if (copy_resource != 47) return 14;
+              if (sizeof(D3D11_TEXTURE2D_DESC) != 44) return 15;
+              if (!guid_eq(&IID_ID3D11Device1, iid_device1)) return 16;
+              if (!guid_eq(&IID_ID3D11Texture2D, iid_tex2d)) return 17;
+              puts("D3D11_ABI_EXACT_PASS");
+              return 0;
+          }
+          '@ | Set-Content abi_probe.c -Encoding ASCII
+
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if(-not $vs){throw 'Visual Studio C++ toolchain not found'}
+          $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          cmd /c "`"$vcvars`" && cl /nologo /W4 /WX abi_probe.c /Fe:abi_probe.exe && abi_probe.exe > abi-result.txt"
+          if($LASTEXITCODE -ne 0){if(Test-Path abi-result.txt){Get-Content abi-result.txt};throw "ABI probe failed exit $LASTEXITCODE"}
+          Get-Content abi-result.txt
+          if(-not ((Get-Content abi-result.txt -Raw) -match 'D3D11_ABI_EXACT_PASS')){throw 'pass marker missing'}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: core-ui-d3d11-abi
+          path: abi-result.txt
