@@ -270,8 +270,8 @@ public final class RuntimeTestMod {
         require(placed.consumesAction(), "real BlockItem placement did not succeed: " + placed);
         require(isGraveBlock(level.getBlockState(manualPos).getBlock()), "manual grave block was not placed at target");
 
-        boolean destroyed = p3.gameMode.destroyBlock(manualPos);
-        require(!destroyed, "Creative destroyBlock returned true for manually placed grave");
+        boolean destroyReturn = p3.gameMode.destroyBlock(manualPos);
+        log("Creative destroyBlock return value=" + destroyReturn + "; verifying actual world state next");
         phase = 107;
         ticks = 0;
     }
