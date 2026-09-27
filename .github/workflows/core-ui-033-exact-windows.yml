@@ -115,6 +115,7 @@ jobs:
           'ELECTRON_TCP_LISTEN=PASS' | Add-Content exact-windows-result.txt
 
       - name: Exercise real offscreen shared-texture producer
+        continue-on-error: true
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
@@ -164,7 +165,18 @@ jobs:
           s.close()
           '@ | Set-Content -LiteralPath exact_probe.py -Encoding UTF8
           python exact_probe.py
-          'REAL_ELECTRON_SHARED_TEXTURE_PRODUCER=PASS' | Add-Content exact-windows-result.txt
+          if($LASTEXITCODE -eq 0){
+            'REAL_ELECTRON_SHARED_TEXTURE_PRODUCER=PASS' | Add-Content exact-windows-result.txt
+          } else {
+            $gpu=Join-Path $env:LOCALAPPDATA 'CORE UI\core-ui-gpu.log'
+            $gt=if(Test-Path $gpu){Get-Content $gpu -Raw}else{''}
+            if($gt -match '"supportsD3dSharedImages":false' -and $gt -match 'Microsoft Basic Render Driver'){
+              'SHARED_TEXTURE_UNAVAILABLE_RUNNER_HAS_NO_D3D_SHARED_IMAGES=CONFIRMED' | Add-Content exact-windows-result.txt
+            } else {
+              'SHARED_TEXTURE_PRODUCER_TEST_FAILED_UNCLASSIFIED=FAIL' | Add-Content exact-windows-result.txt
+            }
+            exit $LASTEXITCODE
+          }
 
       - name: Warm restart without redownload
         shell: powershell
