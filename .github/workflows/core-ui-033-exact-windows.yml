@@ -1,0 +1,207 @@
+name: CORE UI 0.3.3 exact Windows runtime
+
+on:
+  push:
+    branches: [ core-ui-runtime-033-test ]
+    paths:
+      - '.github/workflows/core-ui-033-exact-windows.yml'
+  workflow_dispatch:
+
+jobs:
+  exact-windows-runtime:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core-ui-runtime-033-test
+
+      - name: Reconstruct exact final ZIP
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $b64=(Get-Content -LiteralPath 'runtime-test/core-ui-gpu-0.3.3.zip.b64' -Raw).Trim()
+          [IO.File]::WriteAllBytes('CORE_UI_GPU_0.3.3.zip',[Convert]::FromBase64String($b64))
+          $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath 'CORE_UI_GPU_0.3.3.zip').Hash.ToLowerInvariant()
+          if($sha -ne '6ca883d14c124167ce72f5d0a1b853bd0db71f290c90c1cd87e04dc901b6e5ac'){throw "ZIP hash mismatch: $sha"}
+          $dest=Join-Path $env:TEMP 'CORE UI exact 033 runtime'
+          Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Expand-Archive -LiteralPath 'CORE_UI_GPU_0.3.3.zip' -DestinationPath $dest -Force
+          $root=Join-Path $dest 'CORE_UI_GPU_0.3.3'
+          foreach($rel in @('CORE UI.exe','core-ui.ps1','core_ui_bridge-0.3.3.jar','app\main.js','app\index.html')){
+            if(-not (Test-Path -LiteralPath (Join-Path $root $rel))){throw "missing: $rel"}
+          }
+          "ZIP_SHA256=$sha" | Set-Content -LiteralPath exact-windows-result.txt
+          "ROOT=$root" | Add-Content -LiteralPath exact-windows-result.txt
+          'EXACT_PACKAGE_RECONSTRUCT=PASS' | Add-Content -LiteralPath exact-windows-result.txt
+
+      - name: Clean private runtime and launch exact CORE UI.exe
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:TEMP 'CORE UI exact 033 runtime\CORE_UI_GPU_0.3.3'
+          $local=Join-Path $env:LOCALAPPDATA 'CORE UI'
+          Get-Process electron -ErrorAction SilentlyContinue | Where-Object {
+            try { $_.Path -like "$local\runtime\*" } catch { $false }
+          } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath $local -Recurse -Force -ErrorAction SilentlyContinue
+          if(Test-Path -LiteralPath $local){throw 'failed to remove old CORE UI private runtime'}
+
+          $launcher=Join-Path $root 'CORE UI.exe'
+          $p=Start-Process -FilePath $launcher -WorkingDirectory $root -PassThru
+          if(-not $p.WaitForExit(15000)){throw 'CORE UI.exe did not return within 15 seconds'}
+          if($p.ExitCode -ne 0){throw "CORE UI.exe exit code $($p.ExitCode)"}
+          'NATIVE_EXE_EXIT_0=PASS' | Add-Content exact-windows-result.txt
+
+          $boot=Join-Path $local 'bootstrap.log'
+          $gpu=Join-Path $local 'core-ui-gpu.log'
+          $runtime=Join-Path $local 'runtime\electron-44.4.5'
+          $ready=$false
+          for($i=0;$i -lt 480;$i++){
+            if(Test-Path $boot){
+              $bt=Get-Content $boot -Raw
+              if($bt -match 'ERROR:'){
+                Copy-Item $boot exact-bootstrap.log -Force
+                throw "bootstrap error: $bt"
+              }
+            }
+            if((Test-Path $gpu) -and ((Get-Content $gpu -Raw) -match 'Listening on 127\.0\.0\.1:37541')){
+              $ready=$true
+              break
+            }
+            Start-Sleep -Milliseconds 500
+          }
+          if(Test-Path $boot){Copy-Item $boot exact-bootstrap.log -Force}
+          if(Test-Path $gpu){Copy-Item $gpu exact-gpu.log -Force}
+          if(-not $ready){throw 'first run did not reach renderer TCP listening state'}
+
+          $bt=Get-Content $boot -Raw
+          $gt=Get-Content $gpu -Raw
+          foreach($m in @(
+            'CORE UI GPU 0.3.3 bootstrap started',
+            'Electron runtime missing; beginning verified one-time download',
+            'Downloading Electron 44.4.5',
+            'Electron runtime installed and verified',
+            'Launching '
+          )) {
+            if($bt -notmatch [regex]::Escape($m)){throw "missing bootstrap marker: $m"}
+          }
+          if(-not (Test-Path -LiteralPath (Join-Path $runtime 'electron.exe'))){throw 'electron.exe missing after bootstrap'}
+          if(-not (Test-Path -LiteralPath (Join-Path $runtime '.core-ui-runtime-ok'))){throw 'runtime marker missing'}
+          $marker=Get-Content -LiteralPath (Join-Path $runtime '.core-ui-runtime-ok') -Raw
+          if($marker -notmatch '11c395820a5aaa8ebcc0686b476d0ac98a730274ebfbdc8cf5538a7c2815cb5d'){throw 'runtime SHA marker mismatch'}
+          if($gt -notmatch 'CORE UI GPU renderer 0\.3\.3 starting'){throw 'renderer startup marker missing'}
+          if($gt -notmatch 'Offscreen HTML renderer loaded'){throw 'HTML load marker missing'}
+          if($gt -notmatch 'Listening on 127\.0\.0\.1:37541'){throw 'TCP listen marker missing'}
+
+          'CLEAN_FIRST_RUN_DOWNLOAD=PASS' | Add-Content exact-windows-result.txt
+          'ELECTRON_SHA_INSTALL=PASS' | Add-Content exact-windows-result.txt
+          'ELECTRON_RENDERER_START=PASS' | Add-Content exact-windows-result.txt
+          'ELECTRON_HTML_LOAD=PASS' | Add-Content exact-windows-result.txt
+          'ELECTRON_TCP_LISTEN=PASS' | Add-Content exact-windows-result.txt
+
+      - name: Exercise real offscreen shared-texture producer
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import json, socket, time
+          s=socket.create_connection(("127.0.0.1",37541),timeout=15)
+          f=s.makefile("rwb",buffering=0)
+          ready=json.loads(f.readline().decode("utf-8"))
+          assert ready.get("type")=="ready" and ready.get("protocol")==10, ready
+          for m in (
+              {"type":"hello","protocol":10,"pid":7331},
+              {"type":"viewport","width":1280,"height":720},
+              {"type":"state","screen":"pause"},
+          ):
+              f.write((json.dumps(m)+"\n").encode("utf-8"))
+          deadline=time.time()+30
+          frame=None
+          error=None
+          messages=[ready]
+          while time.time()<deadline:
+              s.settimeout(max(0.2,deadline-time.time()))
+              try:
+                  line=f.readline()
+              except (TimeoutError,socket.timeout):
+                  break
+              if not line:
+                  break
+              m=json.loads(line.decode("utf-8"))
+              messages.append(m)
+              if m.get("type")=="renderer_error":
+                  error=m
+                  break
+              if m.get("type")=="frame":
+                  frame=m
+                  break
+          assert error is None, error
+          assert frame is not None, messages
+          assert int(frame.get("id",0))>0, frame
+          assert int(frame.get("width",0))>0 and int(frame.get("height",0))>0, frame
+          assert frame.get("format") in ("rgba","bgra"), frame
+          assert int(frame.get("handle","0"))>0, frame
+          f.write((json.dumps({"type":"frame_ack","id":frame["id"],"ok":True,"detail":"exact Windows CI producer probe"})+"\n").encode("utf-8"))
+          f.write((json.dumps({"type":"state","screen":"game"})+"\n").encode("utf-8"))
+          open("exact-shared-texture.txt","w",encoding="utf-8").write(
+              "READY="+json.dumps(ready,sort_keys=True)+"\nFRAME="+json.dumps(frame,sort_keys=True)+"\nREAL_ELECTRON_SHARED_TEXTURE_PRODUCER=PASS\n"
+          )
+          s.close()
+          '@ | Set-Content -LiteralPath exact_probe.py -Encoding UTF8
+          python exact_probe.py
+          'REAL_ELECTRON_SHARED_TEXTURE_PRODUCER=PASS' | Add-Content exact-windows-result.txt
+
+      - name: Warm restart without redownload
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:TEMP 'CORE UI exact 033 runtime\CORE_UI_GPU_0.3.3'
+          $local=Join-Path $env:LOCALAPPDATA 'CORE UI'
+          $runtime=Join-Path $local 'runtime\electron-44.4.5'
+          $boot=Join-Path $local 'bootstrap.log'
+          $before=(Select-String -Path $boot -Pattern 'Downloading Electron 44\.4\.5' -AllMatches).Matches.Count
+          Get-Process electron -ErrorAction SilentlyContinue | Where-Object {
+            try { $_.Path -like "$runtime\*" } catch { $false }
+          } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          Remove-Item (Join-Path $local 'core-ui-gpu.log') -Force -ErrorAction SilentlyContinue
+
+          $p=Start-Process -FilePath (Join-Path $root 'CORE UI.exe') -WorkingDirectory $root -PassThru
+          if(-not $p.WaitForExit(15000)){throw 'warm CORE UI.exe did not return'}
+          if($p.ExitCode -ne 0){throw "warm launcher exit $($p.ExitCode)"}
+          $gpu=Join-Path $local 'core-ui-gpu.log'
+          $ready=$false
+          for($i=0;$i -lt 180;$i++){
+            if((Test-Path $gpu) -and ((Get-Content $gpu -Raw) -match 'Listening on 127\.0\.0\.1:37541')){$ready=$true;break}
+            Start-Sleep -Milliseconds 500
+          }
+          if(-not $ready){throw 'warm restart did not reach renderer'}
+          $after=(Select-String -Path $boot -Pattern 'Downloading Electron 44\.4\.5' -AllMatches).Matches.Count
+          if($after -ne $before){throw 'warm restart redownloaded Electron'}
+          'WARM_RESTART_NO_REDOWNLOAD=PASS' | Add-Content exact-windows-result.txt
+
+      - name: Stop CORE UI
+        if: always()
+        shell: powershell
+        run: |
+          $runtime=Join-Path $env:LOCALAPPDATA 'CORE UI\runtime\electron-44.4.5'
+          Get-Process electron -ErrorAction SilentlyContinue | Where-Object {
+            try { $_.Path -like "$runtime\*" } catch { $false }
+          } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-Content exact-windows-result.txt -ErrorAction SilentlyContinue
+          Get-Content exact-bootstrap.log -ErrorAction SilentlyContinue
+          Get-Content exact-gpu.log -ErrorAction SilentlyContinue
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-ui-033-exact-windows-runtime
+          if-no-files-found: warn
+          path: |
+            exact-windows-result.txt
+            exact-bootstrap.log
+            exact-gpu.log
+            exact-shared-texture.txt
