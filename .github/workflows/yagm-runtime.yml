@@ -1,0 +1,105 @@
+name: YAGM Full Runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - chatgpt-yagm-runtime-20260927
+    paths:
+      - "runtime/yagm-20260927/**"
+      - ".github/workflows/yagm-runtime.yml"
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Reconstruct exact patched JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat runtime/yagm-20260927/yagm.part* | base64 -d > runtime/yagm-20260927/yagm_orbit10_autoloot.jar
+          sha256sum runtime/yagm-20260927/yagm_orbit10_autoloot.jar
+          test "$(sha256sum runtime/yagm-20260927/yagm_orbit10_autoloot.jar | awk '{print $1}')" = "b688b29fe3aec80ea6d6ffcd708a54afc902bc79edac6f590d41ed8bed122f50"
+          jar tf runtime/yagm-20260927/yagm_orbit10_autoloot.jar >/dev/null
+
+      - name: Prepare NeoForge 1.21.1 test mod
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/NeoForgeMDKs/MDK-1.21.1-ModDevGradle.git mdk
+          cd mdk
+          sed -i 's/^neo_version=.*/neo_version=21.1.250/' gradle.properties
+          sed -i 's/^mod_id=.*/mod_id=yagm_runtime_test/' gradle.properties
+          sed -i 's/^mod_name=.*/mod_name=YAGM Runtime Test/' gradle.properties
+          sed -i 's/^mod_version=.*/mod_version=1.0.0/' gradle.properties
+          sed -i 's/^mod_group_id=.*/mod_group_id=dev.yagm_runtime_test/' gradle.properties
+          rm -rf src/main/java/com/example
+          mkdir -p src/main/java/dev/yagm_runtime_test
+          cp ../runtime/yagm-20260927/RuntimeTestMod.java src/main/java/dev/yagm_runtime_test/
+          ./gradlew classes --no-daemon --console=plain
+
+      - name: Install exact test runtime mods
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd mdk
+          mkdir -p run/mods
+          cp ../runtime/yagm-20260927/yagm_orbit10_autoloot.jar run/mods/
+          python3 - <<'PY'
+          import json, urllib.request
+          url = 'https://api.modrinth.com/v2/project/architectury-api/version?loaders=%5B%22neoforge%22%5D&game_versions=%5B%221.21.1%22%5D'
+          with urllib.request.urlopen(url) as r:
+              versions = json.load(r)
+          if not versions:
+              raise SystemExit('No Architectury API NeoForge 1.21.1 version found')
+          files = versions[0]['files']
+          f = next((x for x in files if x.get('primary')), files[0])
+          print('Architectury:', versions[0]['version_number'], f['filename'])
+          urllib.request.urlretrieve(f['url'], 'run/mods/' + f['filename'])
+          PY
+          printf 'eula=true\n' > run/eula.txt
+
+      - name: Runtime stage 1 - real death and persisted grave
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd mdk
+          rm -f run/yagm-runtime-stage.properties run/yagm-runtime-complete.txt run/yagm-runtime-failure.txt
+          timeout 180s ./gradlew runServer --no-daemon --console=plain 2>&1 | tee ../stage1.log
+          test ! -f run/yagm-runtime-failure.txt
+          test -f run/yagm-runtime-stage.properties
+          grep -q 'YAGM_RUNTIME_STAGE1: PASS' ../stage1.log
+
+      - name: Runtime stage 2 - restart, loot, placement and break tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd mdk
+          timeout 180s ./gradlew runServer --no-daemon --console=plain 2>&1 | tee ../stage2.log
+          test ! -f run/yagm-runtime-failure.txt
+          test -f run/yagm-runtime-complete.txt
+          grep -q 'YAGM_RUNTIME_TEST: PASS' ../stage2.log
+          cat run/yagm-runtime-complete.txt
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yagm-runtime-evidence
+          path: |
+            stage1.log
+            stage2.log
+            mdk/run/yagm-runtime-stage.properties
+            mdk/run/yagm-runtime-complete.txt
+            mdk/run/yagm-runtime-failure.txt
+            mdk/run/config/yagm_orbit.properties
+            mdk/run/logs/latest.log
