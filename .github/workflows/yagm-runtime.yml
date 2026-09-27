@@ -54,6 +54,7 @@ jobs:
           rm -rf src/main/java/com/example
           mkdir -p src/main/java/dev/yagm_runtime_test
           cp ../runtime/yagm-20260927/RuntimeTestMod.java src/main/java/dev/yagm_runtime_test/
+          cp ../runtime/yagm-20260927/ClientRuntimeObserver.java src/main/java/dev/yagm_runtime_test/
           ./gradlew classes --no-daemon --console=plain
 
       - name: Install exact test runtime mods
@@ -99,6 +100,26 @@ jobs:
           grep -q 'YAGM_RUNTIME_TEST: PASS' ../stage2.log
           cat run/yagm-runtime-complete.txt
 
+      - name: Runtime client startup - real title screen
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0 libegl1 libegl-mesa0
+          cd mdk
+          rm -f run/yagm-client-title-pass.txt
+          set +e
+          timeout 180s xvfb-run -a ./gradlew runClient --no-daemon --console=plain > ../client.log 2>&1
+          code=$?
+          set -e
+          tail -300 ../client.log
+          test -f run/yagm-client-title-pass.txt
+          grep -q 'YAGM_CLIENT_RUNTIME: PASS title screen opened' ../client.log
+          if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then
+            echo "Client exited with unexpected code $code"
+            exit "$code"
+          fi
+
       - name: Upload runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -107,9 +128,11 @@ jobs:
           path: |
             stage1.log
             stage2.log
+            client.log
             runtime/yagm-20260927/yagm_orbit10_autoloot.jar
             mdk/run/yagm-runtime-stage.properties
             mdk/run/yagm-runtime-complete.txt
+            mdk/run/yagm-client-title-pass.txt
             mdk/run/yagm-runtime-failure.txt
             mdk/run/config/yagm_orbit.properties
             mdk/run/logs/latest.log
