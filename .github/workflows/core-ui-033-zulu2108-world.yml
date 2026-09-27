@@ -1,0 +1,310 @@
+name: CORE UI 0.3.3 exact Java 21.0.8 runtime
+
+on:
+  push:
+    branches: [ core-ui-runtime-033-test ]
+    paths:
+      - '.github/workflows/core-ui-033-zulu2108-world.yml'
+  workflow_dispatch:
+
+jobs:
+  minecraft-real-world:
+    strategy:
+      fail-fast: false
+      matrix:
+        neo: ['21.1.250','21.1.251']
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '21.0.8'
+
+      - name: Install display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox mesa-utils
+
+      - name: Reconstruct exact final 0.3.3 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d runtime-test/core-ui-gpu-0.3.3.zip.b64 > core-ui-0.3.3.zip
+          echo '6ca883d14c124167ce72f5d0a1b853bd0db71f290c90c1cd87e04dc901b6e5ac  core-ui-0.3.3.zip' | sha256sum -c -
+          unzip -q core-ui-0.3.3.zip
+          cp CORE_UI_GPU_0.3.3/core_ui_bridge-0.3.3.jar core_ui_bridge-0.3.3.jar
+          echo '65ee10bf60ab52c4838db4f90708e0ee71e7a825ca58f99882ae8b610c32b1fc  core_ui_bridge-0.3.3.jar' | sha256sum -c -
+          unzip -p core_ui_bridge-0.3.3.jar META-INF/neoforge.mods.toml | tee bridge-metadata.txt
+          grep -F 'versionRange="[21.1.250,21.2)"' bridge-metadata.txt
+
+      - name: Prepare NeoForge world test
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/NeoForgeMDKs/MDK-1.21.1-ModDevGradle.git mdk
+          cd mdk
+          sed -i 's/^neo_version=.*/neo_version=${{ matrix.neo }}/' gradle.properties
+          sed -i 's/^mod_id=.*/mod_id=coreuiworldtest/' gradle.properties
+          sed -i 's/^mod_name=.*/mod_name=CORE UI World Runtime Test/' gradle.properties
+          sed -i 's/^mod_version=.*/mod_version=1.0.0/' gradle.properties
+          sed -i 's/^mod_group_id=.*/mod_group_id=com.example.coreuiworld/' gradle.properties
+          rm -rf src/main/java/com/example/examplemod
+          mkdir -p src/main/java/com/example/coreuiworld run
+          cat > src/main/java/com/example/coreuiworld/CoreUiWorldTest.java <<'JAVA'
+          package com.example.coreuiworld;
+
+          import net.minecraft.client.Minecraft;
+          import net.minecraft.client.gui.screens.PauseScreen;
+          import net.neoforged.api.distmarker.Dist;
+          import net.neoforged.fml.ModList;
+          import net.neoforged.fml.common.Mod;
+          import net.neoforged.neoforge.client.event.ClientTickEvent;
+          import net.neoforged.neoforge.common.NeoForge;
+          import java.nio.file.Files;
+          import java.nio.file.Path;
+          import java.nio.file.StandardOpenOption;
+
+          @Mod(value = CoreUiWorldTest.MOD_ID, dist = Dist.CLIENT)
+          public final class CoreUiWorldTest {
+              public static final String MOD_ID="coreuiworldtest";
+              private int phase=0, ticks=0, wait=0;
+
+              public CoreUiWorldTest() {
+                  NeoForge.EVENT_BUS.addListener(this::tick);
+                  trace("TEST_MOD_CONSTRUCTED");
+              }
+
+              private void tick(ClientTickEvent.Post event) {
+                  try {
+                      Minecraft mc=Minecraft.getInstance();
+                      ticks++;
+                      if(phase==0 && ticks>=80 && mc.level==null && mc.screen!=null) {
+                          trace("OPEN_WORLD_REQUESTED screen="+mc.screen.getClass().getName());
+                          phase=1;
+                          mc.createWorldOpenFlows().openWorld("CoreUiRuntime", () -> trace("OPEN_WORLD_CALLBACK"));
+                          return;
+                      }
+                      if(phase==1) {
+                          if(mc.level==null || mc.player==null || mc.screen!=null) return;
+                          trace("WORLD_LOADED=true");
+                          trace("PLAYER_PRESENT=true");
+                          trace("CORE_UI_LOADED="+ModList.get().isLoaded("core_ui_bridge"));
+                          phase=2; wait=0; return;
+                      }
+                      if(phase==2) {
+                          if(++wait<50) return;
+                          mc.setScreen(new PauseScreen(true));
+                          trace("FIRST_PAUSE_SCREEN="+cls(mc));
+                          if(!isOverlay(mc)) fail(mc,"FIRST_OVERLAY_REPLACEMENT_FAILED");
+                          trace("FIRST_OVERLAY_REPLACEMENT=PASS");
+                          phase=3; wait=0; return;
+                      }
+                      if(phase==3) {
+                          if(!isOverlay(mc)) fail(mc,"OVERLAY_LOST_BEFORE_FULLSCREEN");
+                          if(++wait==30) {
+                              trace("PRE_FULLSCREEN="+mc.getWindow().isFullscreen());
+                              mc.getWindow().toggleFullScreen();
+                              phase=4; wait=0;
+                          }
+                          return;
+                      }
+                      if(phase==4) {
+                          if(!isOverlay(mc)) fail(mc,"OVERLAY_LOST_IN_FULLSCREEN");
+                          if(++wait==60) {
+                              trace("IN_FULLSCREEN="+mc.getWindow().isFullscreen());
+                              if(!mc.getWindow().isFullscreen()) fail(mc,"FULLSCREEN_DID_NOT_ENGAGE");
+                              trace("FULLSCREEN_OVERLAY_SURVIVED=PASS");
+                              mc.getWindow().toggleFullScreen();
+                              phase=5; wait=0;
+                          }
+                          return;
+                      }
+                      if(phase==5) {
+                          if(!isOverlay(mc)) fail(mc,"OVERLAY_LOST_AFTER_FULLSCREEN");
+                          if(++wait==50) {
+                              if(mc.getWindow().isFullscreen()) fail(mc,"WINDOWED_DID_NOT_RETURN");
+                              trace("WINDOWED_OVERLAY_SURVIVED=PASS");
+                              mc.screen.keyPressed(256,0,0);
+                              phase=6; wait=0;
+                          }
+                          return;
+                      }
+                      if(phase==6) {
+                          if(++wait<10) return;
+                          if(mc.screen!=null) fail(mc,"ESC_DID_NOT_RESUME");
+                          if(mc.level==null || mc.player==null) fail(mc,"WORLD_OR_PLAYER_LOST");
+                          trace("FIRST_RESUME=PASS");
+                          mc.setScreen(new PauseScreen(true));
+                          trace("SECOND_PAUSE_SCREEN="+cls(mc));
+                          if(!isOverlay(mc)) fail(mc,"SECOND_OVERLAY_REPLACEMENT_FAILED");
+                          trace("SECOND_OVERLAY_REPLACEMENT=PASS");
+                          phase=7; wait=0; return;
+                      }
+                      if(phase==7) {
+                          if(!isOverlay(mc)) fail(mc,"SECOND_OVERLAY_LOST");
+                          if(++wait==30) {
+                              mc.screen.keyPressed(256,0,0);
+                              phase=8; wait=0;
+                          }
+                          return;
+                      }
+                      if(phase==8) {
+                          if(++wait<10) return;
+                          if(mc.screen!=null) fail(mc,"SECOND_ESC_DID_NOT_RESUME");
+                          if(mc.level==null || mc.player==null) fail(mc,"WORLD_OR_PLAYER_LOST_AFTER_SECOND_RESUME");
+                          trace("SECOND_RESUME=PASS");
+                          trace("CLIENT_WORLD_RUNTIME_RESULT PASS");
+                          phase=9;
+                          mc.stop();
+                      }
+                      if(ticks>6000 && phase<9) fail(mc,"GLOBAL_TIMEOUT_PHASE_"+phase);
+                  } catch(Throwable t) {
+                      trace("EXCEPTION="+t.getClass().getName()+":"+String.valueOf(t.getMessage()));
+                      t.printStackTrace();
+                      try { Minecraft.getInstance().stop(); } catch(Throwable ignored) {}
+                      phase=99;
+                  }
+              }
+
+              private static boolean isOverlay(Minecraft mc) {
+                  return mc.screen!=null && mc.screen.getClass().getName().equals("dev.coreui.bridge.GpuOverlayScreen");
+              }
+              private static String cls(Minecraft mc) {
+                  return mc.screen==null ? "null" : mc.screen.getClass().getName();
+              }
+              private static void fail(Minecraft mc,String s) {
+                  trace("CLIENT_WORLD_RUNTIME_RESULT FAIL "+s);
+                  mc.stop();
+              }
+              private static synchronized void trace(String s) {
+                  System.out.println("[CORE-UI-WORLD] "+s);
+                  try {
+                      Files.writeString(Path.of("CORE_UI_WORLD_TRACE.txt"),s+System.lineSeparator(),
+                              StandardOpenOption.CREATE,StandardOpenOption.APPEND);
+                  } catch(Exception e) { throw new RuntimeException(e); }
+              }
+          }
+          JAVA
+          chmod +x gradlew
+          ./gradlew --no-daemon compileJava
+
+      - name: Generate actual world
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd mdk
+          mkdir -p run
+          echo 'eula=true' > run/eula.txt
+          cat > run/server.properties <<'EOF'
+          level-name=world
+          online-mode=false
+          difficulty=normal
+          gamemode=survival
+          spawn-monsters=false
+          view-distance=4
+          simulation-distance=4
+          EOF
+          setsid ./gradlew --no-daemon runServer --console=plain > ../server-console-${{ matrix.neo }}.log 2>&1 &
+          pid=$!
+          ready=0
+          for i in $(seq 1 180); do
+            if grep -qE 'Done \(.*\)!|For help, type' run/logs/latest.log 2>/dev/null; then ready=1; break; fi
+            if ! kill -0 "$pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          cp run/logs/latest.log ../server-latest-${{ matrix.neo }}.log 2>/dev/null || true
+          kill -- -"$pid" 2>/dev/null || true
+          sleep 3
+          test "$ready" -eq 1
+          test -f run/world/level.dat
+          rm -rf run/saves/CoreUiRuntime
+          mkdir -p run/saves/CoreUiRuntime
+          cp -a run/world/. run/saves/CoreUiRuntime/
+
+      - name: Install CORE UI and start protocol renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mdk/run/mods
+          cp core_ui_bridge-0.3.3.jar mdk/run/mods/
+          cat > mock_renderer.py <<'PY'
+          import socket
+          s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+          s.bind(('127.0.0.1',37541)); s.listen(1)
+          with open('mock-renderer.log','w',buffering=1) as log:
+              log.write('LISTENING\n')
+              c,a=s.accept(); log.write('ACCEPT '+repr(a)+'\n')
+              c.sendall(b'{"type":"ready","protocol":10,"renderer":"world-runtime"}\n')
+              buf=b''; c.settimeout(300)
+              try:
+                  while True:
+                      d=c.recv(65536)
+                      if not d: break
+                      buf+=d
+                      while b'\n' in buf:
+                          line,buf=buf.split(b'\n',1)
+                          if line: log.write(line.decode('utf-8','replace')+'\n')
+              except Exception as e: log.write('END '+repr(e)+'\n')
+              try:c.close()
+              except:pass
+          s.close()
+          PY
+          python3 mock_renderer.py &
+          echo $! > mock-renderer.pid
+          for i in $(seq 1 50); do grep -q LISTENING mock-renderer.log 2>/dev/null && exit 0; sleep .1; done
+          exit 1
+
+      - name: Run actual singleplayer client
+        shell: bash
+        run: |
+          set +e
+          cd mdk
+          rm -f run/CORE_UI_WORLD_TRACE.txt
+          Xvfb :99 -screen 0 1280x720x24 -ac +extension GLX +render -noreset > ../xvfb-${{ matrix.neo }}.log 2>&1 &
+          export DISPLAY=:99
+          openbox > ../openbox-${{ matrix.neo }}.log 2>&1 &
+          sleep 2
+          glxinfo -B > ../glxinfo-${{ matrix.neo }}.txt 2>&1 || true
+          timeout 300s ./gradlew --no-daemon runClient --console=plain > ../client-console-${{ matrix.neo }}.log 2>&1
+          code=$?
+          cp run/logs/latest.log ../client-latest-${{ matrix.neo }}.log 2>/dev/null || true
+          cp run/CORE_UI_WORLD_TRACE.txt ../CORE_UI_WORLD_TRACE-${{ matrix.neo }}.txt 2>/dev/null || true
+          echo "RUNCLIENT_EXIT=$code" > ../world-result-${{ matrix.neo }}.txt
+          exit 0
+
+      - name: Assert actual-world behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          f="CORE_UI_WORLD_TRACE-${{ matrix.neo }}.txt"
+          cat "$f"
+          for marker in             'WORLD_LOADED=true'             'PLAYER_PRESENT=true'             'CORE_UI_LOADED=true'             'FIRST_OVERLAY_REPLACEMENT=PASS'             'FULLSCREEN_OVERLAY_SURVIVED=PASS'             'WINDOWED_OVERLAY_SURVIVED=PASS'             'FIRST_RESUME=PASS'             'SECOND_OVERLAY_REPLACEMENT=PASS'             'SECOND_RESUME=PASS'             'CLIENT_WORLD_RUNTIME_RESULT PASS'; do
+              grep -Fqx "$marker" "$f"
+          done
+          ! grep -q '^CLIENT_WORLD_RUNTIME_RESULT FAIL' "$f"
+          grep -q '"type":"hello","protocol":10' mock-renderer.log
+          test "$(grep -c '"type":"state","screen":"pause"' mock-renderer.log)" -ge 2
+          test "$(grep -c '"type":"state","screen":"game"' mock-renderer.log)" -ge 2
+          ! grep -qE 'NoSuchFieldError|NoClassDefFoundError|InvalidMixinException|ExceptionInInitializerError' "client-latest-${{ matrix.neo }}.log"
+          echo 'MINECRAFT_ACTUAL_WORLD_RUNTIME=PASS' >> "world-result-${{ matrix.neo }}.txt"
+
+      - name: Upload Minecraft evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-ui-033-world-${{ matrix.neo }}
+          if-no-files-found: warn
+          path: |
+            CORE_UI_WORLD_TRACE-${{ matrix.neo }}.txt
+            world-result-${{ matrix.neo }}.txt
+            client-console-${{ matrix.neo }}.log
+            client-latest-${{ matrix.neo }}.log
+            server-console-${{ matrix.neo }}.log
+            server-latest-${{ matrix.neo }}.log
+            glxinfo-${{ matrix.neo }}.txt
+            xvfb-${{ matrix.neo }}.log
+            openbox-${{ matrix.neo }}.log
+            mock-renderer.log
+            bridge-metadata.txt
